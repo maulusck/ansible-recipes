@@ -1,0 +1,381 @@
+---
+- name: Fully Automated Arch Linux Setup (Remote SSH)
+  hosts: all
+  gather_facts: no
+  become: yes
+
+  vars:
+    # SSH connection vars
+    ansible_user: "root"
+    ansible_port: 22
+    ansible_password: "testing"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+    # Installation variables
+    root_password: "testing"
+    user_name: "mediauser"
+    user_password: "testing"
+    hostname: "media-station"
+    disk_device: "/dev/sda"
+    disk_encryption_type: "none" # luks or none
+    bootloader: "grub"
+    kernel: "linux-zen"
+    timezone: "UTC"
+
+    # Packages for minimal media/RT station
+    packages:
+      - cpupower
+      - ffmpeg
+      - jellyfin-server
+      - jellyfin-web
+      - jellyfin-ffmpeg
+      - jellyfin-mpv-shim
+      - python-jellyfin-apiclient
+      - qbittorrent
+      - nfs-utils
+      - openvpn
+      - cockpit
+      - rclone
+      - nginx
+      - openssh
+      - ufw
+      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
+      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}"
+
+    # Desktop / graphics profile configuration
+    profile_gfx_driver: "All open-source" # e.g., "Intel", "AMD", "Nvidia (proprietary)"
+    profile_greeter: null # e.g., "gdm", "lightdm", null
+    profile_main: "Xorg" # "Xorg" or "Wayland"
+    profile_custom_settings: {} # any key/value custom settings
+    profile_details: [] # extra profile details if needed
+
+    # Post-install fine-tuning
+    media_services:
+      - jellyfin
+    ufw_profiles:
+      - SSH
+      - "{{ 'WWW Secure' if ssl_cert_path is defined and ssl_cert_path | length > 0 else 'WWW' }}"
+    ufw_ports:
+      - 32400/tcp # Jellyfin
+
+    # Optional secondary disk
+    secondary_disk_uuid: "" # leave empty to skip
+    secondary_disk_fs: "ext4" # optional, defaults to ext4
+
+    # Optional SSL certs path on controller
+    # Must contain two files: fullchain.pem (certificate) and privkey.pem (private key)
+    # leave empty to skip SSL
+    ssl_cert_path: ""
+    ntp_enabled: true
+    parallel_downloads: 0
+
+    # encrypted password hashes
+    root_password_hash: "{{ root_password | password_hash('sha512') }}"
+    user_password_hash: "{{ user_password | password_hash('sha512') }}"
+
+    # selectable network options:
+    # type: "nm" = NetworkManager, "nm_iwd" = NM with iwd, "manual" = manual config
+    network_type: "nm_iwd"
+
+    # manual network example (only used if network_type="manual")
+    manual_nics:
+      - iface: "ens18"
+        dhcp: true
+        ip: null
+        gateway: null
+        dns: []
+
+  tasks:
+    # Archinstall configuration
+    - name: Copy Archinstall main config.json
+      copy:
+        dest: /tmp/config.json
+        mode: "0600"
+        content: |
+          {
+            "app_config": {
+              "audio_config": {"audio": "pipewire"},
+              "bluetooth_config": {"enabled": true},
+              "print_service_config": {"enabled": false}
+            },
+            "archinstall-language": "English",
+            "auth_config": {},
+            "bootloader_config": {
+              "bootloader": "{{ bootloader | title }}",
+              "removable": true,
+              "uki": false
+            },
+            "custom_commands": [
+              "systemctl enable sshd",
+              "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config"{% if network_type in ['nm','nm_iwd'] %},
+              "systemctl enable NetworkManager"{% endif %}{% if network_type == 'nm_iwd' %},
+              "systemctl enable iwd"{% endif %}
+            ],
+            "disk_config": {
+              "btrfs_options": {"snapshot_config": null},
+              "config_type": "default_layout",
+              "device_modifications": [
+                {
+                  "device": "{{ disk_device }}",
+                  "partitions": [
+                    {
+                      "btrfs": [],
+                      "dev_path": null,
+                      "flags": ["boot","esp"],
+                      "fs_type": "fat32",
+                      "mount_options": [],
+                      "mountpoint": "/boot",
+                      "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                      "size": { "sector_size": { "unit": "B","value": 512 }, "unit": "GiB", "value": 1 },
+                      "start": { "sector_size": { "unit": "B","value": 512 }, "unit": "MiB", "value": 1 },
+                      "status": "create",
+                      "type": "primary"
+                    },
+                    {
+                      "btrfs": [],
+                      "dev_path": null,
+                      "flags": [],
+                      "fs_type": "ext4",
+                      "mount_options": [],
+                      "mountpoint": "/",
+                      "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                      "size": { "sector_size": { "unit": "B","value": 512 }, "unit": "B", "value": 33283899392 },
+                      "start": { "sector_size": { "unit": "B","value": 512 }, "unit": "B", "value": 1074790400 },
+                      "status": "create",
+                      "type": "primary"
+                    }
+                  ],
+                  "wipe": true
+                }
+              ]
+            },
+            "hostname": "{{ hostname }}",
+            "kernels": ["{{ kernel }}"],
+            "locale_config": { "kb_layout": "us", "sys_enc": "UTF-8", "sys_lang": "en_US.UTF-8" },
+            "mirror_config": { "custom_repositories": [], "custom_servers": [], "mirror_regions": {}, "optional_repositories": [] },
+            "ntp": {{ ntp_enabled | lower }},
+            "packages": {{ packages | to_json }},
+            "parallel_downloads": {{ parallel_downloads }},
+            "profile_config": {
+              "gfx_driver": "{{ profile_gfx_driver }}",
+              "greeter": {{ profile_greeter | to_json }},
+              "profile": {
+                "custom_settings": {{ profile_custom_settings | to_json }},
+                "details": {{ profile_details | to_json }},
+                "main": "{{ profile_main }}"
+              }
+            },
+            {% if network_type in ["nm", "nm_iwd"] %}
+            "network_config": {
+              "type": "{{ network_type }}"
+            },
+            {% elif network_type == "manual" %}
+            "network_config": {
+              "type": "manual",
+              "nics": {{ manual_nics | to_json }}
+            },
+            {% endif %}
+            "script": null,
+            "services": [],
+            "swap": { "algorithm": "zstd", "enabled": true },
+            "timezone": "{{ timezone }}",
+            "version": "3.0.15"
+          }
+
+    - name: Copy Archinstall creds.json
+      copy:
+        dest: /tmp/creds.json
+        mode: "0600"
+        content: |
+          {
+            "root_enc_password": "{{ root_password_hash }}",
+            "users": [
+              {
+                "username": "{{ user_name }}",
+                "enc_password": "{{ user_password_hash }}",
+                "sudo": true
+              }
+            ]
+          }
+
+    - name: Show SSH command to follow Archinstall logs
+      debug:
+        msg: "Run: ssh {{ ansible_user }}@{{ inventory_hostname }} 'tail -f /var/log/archinstall/*.txt /var/log/archinstall/*.log'"
+
+    - name: Install Arch Linux base system (synchronous)
+      command: archinstall --config /tmp/config.json --creds /tmp/creds.json --silent
+      environment:
+        ANSIBLE_HOST_KEY_CHECKING: "false"
+      register: archinstall_result
+      failed_when: archinstall_result.rc != 0
+
+    - name: Reboot system (ignore failure if SSH is lost)
+      reboot:
+        reboot_timeout: 10
+      ignore_errors: yes
+      ignore_unreachable: yes
+
+    - name: Ask for new IP if needed
+      pause:
+        prompt: "Enter new IP of {{ inventory_hostname }} (press Enter if unchanged)"
+      register: new_ip_input
+
+    - name: Override Ansible host for the rest of the playbook
+      set_fact:
+        ansible_host: "{{ new_ip_input.user_input | default(ansible_host | default(inventory_hostname)) }}"
+
+    # Post-install media setup
+    - name: Create Jellyfin media root directory
+      file:
+        path: /media
+        state: directory
+        owner: "{{ user_name }}"
+        group: jellyfin
+        mode: "2775"
+
+    - name: Set Jellyfin group recursive on media
+      file:
+        path: /media
+        state: directory
+        recurse: yes
+        group: jellyfin
+        mode: "2775"
+
+    - name: Enable and start media services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop: "{{ media_services }}"
+
+    - name: Set CPU governor to performance
+      command: cpupower frequency-set --governor performance
+      ignore_errors: yes
+
+    - name: Disable swap for real-time
+      command: swapoff -a
+      ignore_errors: yes
+
+    - name: Allow UFW application profiles
+      ufw:
+        rule: allow
+        name: "{{ item }}"
+      loop: "{{ ufw_profiles }}"
+
+    - name: Allow UFW raw ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop: "{{ ufw_ports }}"
+
+    - name: Enable UFW
+      command: ufw enable
+      ignore_errors: yes
+
+    # Optional secondary disk mount
+    - name: Mount secondary disk to /media
+      block:
+        - name: Ensure /media exists
+          file:
+            path: /media
+            state: directory
+            owner: "{{ user_name }}"
+            group: jellyfin
+            mode: "2775"
+
+        - name: Add secondary disk to /etc/fstab
+          mount:
+            path: /media
+            src: "UUID={{ secondary_disk_uuid }}"
+            fstype: "{{ secondary_disk_fs | default('ext4') }}"
+            opts: defaults
+            state: mounted
+      when: secondary_disk_uuid
+
+    # Copy SSL cert and key
+    - name: Copy SSL cert and key
+      block:
+        - name: Copy certificate
+          copy:
+            src: "{{ ssl_cert_path }}/fullchain.pem"
+            dest: "/etc/ssl/private/{{ hostname }}.crt"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: yes
+
+        - name: Copy private key
+          copy:
+            src: "{{ ssl_cert_path }}/privkey.pem"
+            dest: "/etc/ssl/private/{{ hostname }}.key"
+            owner: root
+            group: root
+            mode: "0600"
+            remote_src: yes
+      when: ssl_cert_path is defined and ssl_cert_path | length > 0
+
+    # Jellyfin Nginx reverse proxy
+    - name: Deploy Jellyfin Nginx reverse proxy
+      copy:
+        dest: "/etc/nginx/sites-available/{{ hostname }}.conf"
+        mode: "0644"
+        content: |
+          server {
+              listen 80{{ ' default_server' if not (ssl_cert_path is defined and ssl_cert_path | length > 0) else '' }};
+              server_name {{ hostname }};
+              set $jellyfin jellyfin;
+              {% if ssl_cert_path is defined and ssl_cert_path | length > 0 %}
+              listen 443 ssl http2;
+              ssl_certificate /etc/ssl/private/{{ hostname }}.crt;
+              ssl_certificate_key /etc/ssl/private/{{ hostname }}.key;
+              {% endif %}
+              location = / { return 302 http://$host/web/; }
+              location / {
+                  proxy_pass http://$jellyfin:8096;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+                  proxy_buffering off;
+              }
+              location = /web/ {
+                  proxy_pass http://$jellyfin:8096/web/index.html;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+              }
+              location /socket {
+                  proxy_pass http://$jellyfin:8096;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+              }
+          }
+
+    - name: Enable Nginx site
+      file:
+        src: "/etc/nginx/sites-available/{{ hostname }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ hostname }}.conf"
+        state: link
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      failed_when: nginx_test.rc != 0
+
+    - name: Enable and start Nginx
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started

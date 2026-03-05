@@ -1,0 +1,40 @@
+- name: 01_build — Cross-platform Containerized Build
+  hosts: build_host
+  gather_facts: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Ensure build repo exists
+      file:
+        path: "{{ container_build_context }}"
+        state: directory
+
+    - name: Sync NullClaw source
+      git:
+        repo: https://github.com/nullclaw/nullclaw.git
+        dest: "{{ container_build_context }}"
+        update: yes
+
+    - name: Build native binaries for all target arches in containers
+      block:
+        - name: Build binary for "{{ item.os }}-{{ item.arch }}"
+          shell: |
+            podman run --rm \
+              -v {{ container_build_context }}:/src \
+              -v {{ build_output_dir }}/{{ item.os }}/{{ item.arch }}:/out \
+              {{ build_container_base }} \
+              sh -c "apk add --no-cache zig && cd /src && zig build -Dtarget={{ item.zig_triple }} -Doptimize=ReleaseSmall && cp zig-out/bin/{{ binary_name }} /out/"
+          args:
+            chdir: "{{ container_build_context }}"
+          loop: "{{ build_archs }}"
+          loop_control:
+            label: "{{ item.os }}-{{ item.arch }}"
+
+    - name: Build container image for deployment
+      shell: |
+        podman build --pull -t {{ container_image }} {{ container_build_context }}
+      args:
+        chdir: "{{ container_build_context }}"
+
+    - name: Export container image tarball
+      shell: podman save -o "{{ container_tar }}" "{{ container_image }}"

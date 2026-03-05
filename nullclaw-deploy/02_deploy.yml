@@ -1,0 +1,37 @@
+- name: 02_deploy — Deploy NullClaw Artifacts and Config
+  hosts: target_hosts
+  gather_facts: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Ensure install dir exists
+      file:
+        path: "{{ project_path }}"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy native binary
+      when: not deploy_container
+      copy:
+        src: "{{ build_output_dir }}/{{ binary_name }}"
+        dest: "{{ project_path }}/{{ binary_name }}"
+        mode: "0755"
+
+    - name: Deploy container tarball
+      when: deploy_container
+      copy:
+        src: "{{ container_tar }}"
+        dest: "{{ project_path }}/nullclaw.tar"
+        mode: "0644"
+
+    - name: Load container image
+      when: deploy_container
+      shell: podman load -i "{{ project_path }}/nullclaw.tar"
+      args:
+        warn: false
+
+    - name: Write config.json
+      copy:
+        dest: "{{ project_path }}/config.json"
+        content: "{{ nullclaw_config | to_nice_json }}"
+        mode: "0644"

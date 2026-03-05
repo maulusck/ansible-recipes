@@ -1,0 +1,4 @@
+- import_playbook: 00_setup.yml
+- import_playbook: 01_build.yml
+- import_playbook: 02_deploy.yml
+- import_playbook: 03_install.yml

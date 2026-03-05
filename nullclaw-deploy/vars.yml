@@ -1,0 +1,107 @@
+# ----------------------
+# Build & Deploy Settings
+# ----------------------
+# ----------------------
+# Build & Deploy Settings
+# ----------------------
+binary_name: nullclaw
+container_image: nullclaw:latest
+container_tar: "{{ deploy_repo }}/nullclaw.tar"
+container_build_context: "{{ build_repo }}/nullclaw"
+build_output_dir: "{{ deploy_repo }}/bin"
+
+# Containerized build settings
+build_host: em1
+build_container_base: "alpine:3.20"
+build_container_name: "nullclaw-builder"
+build_archs:
+  - { os: linux, arch: x86_64, zig_triple: x86_64-linux-gnu }
+  - { os: linux, arch: aarch64, zig_triple: aarch64-linux-gnu }
+  - { os: darwin, arch: x86_64, zig_triple: x86_64-macos }
+  - { os: darwin, arch: aarch64, zig_triple: aarch64-macos }
+  - { os: windows, arch: x86_64, zig_triple: x86_64-windows-gnu }
+  - { os: android, arch: aarch64, zig_triple: aarch64-linux-android }
+  - { os: freebsd, arch: x86_64, zig_triple: x86_64-freebsd }
+  - { os: netbsd, arch: x86_64, zig_triple: x86_64-netbsd }
+
+install_paths:
+  linux: "/opt/nullclaw"
+  android: "/data/data/com.termux/files/home/.nullclaw"
+  darwin: "/usr/local/nullclaw"
+  windows: "C:\\nullclaw"
+  freebsd: "/usr/local/nullclaw"
+  openbsd: "/usr/local/nullclaw"
+  netbsd: "/usr/pkg/nullclaw"
+
+service_args: ""
+deploy_container: true
+force_build: false
+cache_expiration: 86400
+build_containers: true
+deploy_repo: "{{ playbook_dir }}/deploy_repo"
+build_repo: "{{ playbook_dir }}/build_repo"
+
+# ----------------------
+# API Keys
+# ----------------------
+api_keys:
+  openrouter: "sk-or-xxx"
+  groq: "gsk-xxx"
+  anthropic: "sk-ant-xxx"
+
+# ----------------------
+# NullClaw Configuration JSON
+# ----------------------
+nullclaw_config:
+  default_provider: "openrouter"
+  default_temperature: 0.7
+  models:
+    providers:
+      openrouter: { api_key: "{{ api_keys.openrouter }}" }
+      groq: { api_key: "{{ api_keys.groq }}" }
+      anthropic: { api_key: "{{ api_keys.anthropic }}", base_url: "https://api.anthropic.com" }
+  agents:
+    defaults: { model: { primary: "anthropic/claude-sonnet-4" }, heartbeat: { every: "30m" } }
+    list:
+      - id: "researcher"
+        model: { primary: "anthropic/claude-opus-4" }
+        system_prompt: "..."
+  channels:
+    telegram:
+      accounts:
+        main: { bot_token: "123:ABC", allow_from: ["user1"], reply_in_private: true, proxy: "socks5://..." }
+    discord:
+      accounts:
+        main: { token: "disc-token", guild_id: "12345", allow_from: ["user1"], allow_bots: false }
+    irc:
+      accounts:
+        main: { host: "irc.libera.chat", port: 6697, nick: "nullclaw", channel: "#nullclaw", tls: true, allow_from: ["user1"] }
+    slack:
+      accounts:
+        main: { bot_token: "xoxb-...", app_token: "xapp-...", allow_from: ["user1"] }
+  tools:
+    media:
+      audio:
+        enabled: true
+        language: "ru"
+        models: [{ provider: "groq", model: "whisper-large-v3" }]
+  mcp_servers:
+    filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem"] }
+  memory:
+    backend: "sqlite"
+    auto_save: true
+    embedding_provider: "openai"
+    vector_weight: 0.7
+    keyword_weight: 0.3
+  gateway: { port: 3000, require_pairing: true, allow_public_bind: false }
+  autonomy: { level: "supervised", workspace_only: true, max_actions_per_hour: 20 }
+  runtime:
+    kind: "native"
+    docker: { image: "alpine:3.20", network: "none", memory_limit_mb: 512, read_only_rootfs: true }
+  tunnel: { provider: "none" }
+  secrets: { encrypt: true }
+  identity: { format: "openclaw" }
+  security:
+    sandbox: { backend: "auto" }
+    resources: { max_memory_mb: 512, max_cpu_percent: 80 }
+    audit: { enabled: true, retention_days: 90 }

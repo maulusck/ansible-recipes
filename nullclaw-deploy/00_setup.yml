@@ -1,0 +1,8 @@
+- name: 00_setup — Validate Hosts
+  hosts: all
+  gather_facts: no
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Test Python & Ansible connectivity (raw)
+      raw: python3 --version || python --version
