@@ -96,7 +96,7 @@
         seconds: 3
         prompt: >
           [!] execute_system_installation flag is not set.. Installation will not run.
-          Set it using '-e execute_system_installation' on the command line to enable it.
+          Set it using '-e execute_system_installation=true' on the command line to enable it.
           Continuing...
       when: execute_system_installation is not defined
 
@@ -106,16 +106,16 @@
         - name: Calculate root partition size in bytes
           set_fact:
             root_partition_size_bytes: >-
-              {% set s = root_partition_size | upper %}
-              {% if s.endswith('G') %}
+              {%- set s = root_partition_size | upper -%}
+              {%- if s.endswith('G') -%}
               {{ (s[:-1] | int) * 1024 * 1024 * 1024 }}
-              {% elif s.endswith('M') %}
+              {%- elif s.endswith('M') -%}
               {{ (s[:-1] | int) * 1024 * 1024 }}
-              {% elif s.endswith('B') %}
+              {%- elif s.endswith('B') -%}
               {{ s[:-1] | int }}
-              {% else %}
+              {%- else -%}
               {{ s | int }}
-              {% endif %}
+              {%- endif -%}
 
         # Archinstall configuration
         - name: Copy Archinstall main config.json
