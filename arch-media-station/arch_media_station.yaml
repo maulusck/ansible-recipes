@@ -22,6 +22,8 @@
     kernel: "linux-zen"
     timezone: "UTC"
 
+    root_partition_size: "19G"
+
     # Packages for minimal media/RT station
     packages:
       - cpupower
@@ -89,7 +91,6 @@
         dns: []
 
   tasks:
-
     - name: Inform user about the execute_system_installation variable and pause
       pause:
         seconds: 3
@@ -102,6 +103,19 @@
     - name: Run system installation
       when: execute_system_installation is defined
       block:
+        - name: Calculate root partition size in bytes
+          set_fact:
+            root_partition_size_bytes: >-
+              {% set s = root_partition_size | upper %}
+              {% if s.endswith('G') %}
+              {{ (s[:-1] | int) * 1024 * 1024 * 1024 }}
+              {% elif s.endswith('M') %}
+              {{ (s[:-1] | int) * 1024 * 1024 }}
+              {% elif s.endswith('B') %}
+              {{ s[:-1] | int }}
+              {% else %}
+              {{ s | int }}
+              {% endif %}
 
         # Archinstall configuration
         - name: Copy Archinstall main config.json
@@ -156,7 +170,11 @@
                           "mount_options": [],
                           "mountpoint": "/",
                           "obj_id": "{{ lookup('pipe','uuidgen') }}",
-                          "size": { "sector_size": { "unit": "B","value": 512 }, "unit": "B", "value": 33283899392 },
+                          "size": {
+                            "sector_size": { "unit": "B","value": 512 },
+                            "unit": "B",
+                            "value": {{ root_partition_size_bytes }}
+                          },
                           "start": { "sector_size": { "unit": "B","value": 512 }, "unit": "B", "value": 1074790400 },
                           "status": "create",
                           "type": "primary"
@@ -267,7 +285,7 @@
     - name: Set CPU governor to performance
       lineinfile:
         path: "/etc/default/cpupower-service.conf"
-        regexp: '^#?GOVERNOR='
+        regexp: "^#?GOVERNOR="
         line: "GOVERNOR='performance'"
         create: true
 
@@ -317,7 +335,6 @@
     - name: Mount secondary disk to /media
       when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
       block:
-
         - name: Ensure /media exists
           file:
             path: /media
@@ -369,73 +386,73 @@
         dest: /etc/nginx/nginx.conf
         mode: "0644"
         content: |
-            worker_processes auto;
-            events { worker_connections 1024; }
-            http {
-              upstream jellyfin { server 127.0.0.1:8096; }
-              upstream qbittorrent { server 127.0.0.1:8080; }
-              include mime.types;
-              default_type application/octet-stream;
-              sendfile on;
-              keepalive_timeout 65;
-              server_tokens off;
-              #root /var/www/html;
-              #index index.html;
-              server {
-                listen 80{{ ' default_server' if not (ssl_cert_path is defined and ssl_cert_path | length > 0) else '' }};
-                server_name {{ hostname }};
-            {% if ssl_cert_path is defined and ssl_cert_path | length > 0 %}
-                listen 443 ssl http2;
-                ssl_certificate /etc/ssl/private/{{ hostname }}.crt;
-                ssl_certificate_key /etc/ssl/private/{{ hostname }}.key;
-            {% else %}
-                # HTTP only, optional webroot
-            {% endif %}
-                # jellyfin
-                location = / { return 302 {{ 'https' if ssl_cert_path is defined and ssl_cert_path | length > 0 else 'http' }}://$host/web/; }
-                location / {
-                    proxy_pass http://jellyfin;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                    proxy_set_header X-Forwarded-Protocol $scheme;
-                    proxy_set_header X-Forwarded-Host $http_host;
-                    proxy_buffering off;
-                }
-                location = /web/ {
-                    proxy_pass http://jellyfin/web/index.html;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                    proxy_set_header X-Forwarded-Protocol $scheme;
-                    proxy_set_header X-Forwarded-Host $http_host;
-                }
-                location /socket {
-                    proxy_pass http://jellyfin;
-                    proxy_http_version 1.1;
-                    proxy_set_header Upgrade $http_upgrade;
-                    proxy_set_header Connection "upgrade";
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                    proxy_set_header X-Forwarded-Protocol $scheme;
-                    proxy_set_header X-Forwarded-Host $http_host;
-                }
-                # qbittorrent-nox
-                location /torrent/ {
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                    proxy_set_header X-Forwarded-Protocol $scheme;
-                    proxy_set_header X-Forwarded-Host $http_host;
-                    proxy_pass  http://qbittorrent;
-                }
+          worker_processes auto;
+          events { worker_connections 1024; }
+          http {
+            upstream jellyfin { server 127.0.0.1:8096; }
+            upstream qbittorrent { server 127.0.0.1:8080; }
+            include mime.types;
+            default_type application/octet-stream;
+            sendfile on;
+            keepalive_timeout 65;
+            server_tokens off;
+            #root /var/www/html;
+            #index index.html;
+            server {
+              listen 80{{ ' default_server' if not (ssl_cert_path is defined and ssl_cert_path | length > 0) else '' }};
+              server_name {{ hostname }};
+          {% if ssl_cert_path is defined and ssl_cert_path | length > 0 %}
+              listen 443 ssl http2;
+              ssl_certificate /etc/ssl/private/{{ hostname }}.crt;
+              ssl_certificate_key /etc/ssl/private/{{ hostname }}.key;
+          {% else %}
+              # HTTP only, optional webroot
+          {% endif %}
+              # jellyfin
+              location = / { return 302 {{ 'https' if ssl_cert_path is defined and ssl_cert_path | length > 0 else 'http' }}://$host/web/; }
+              location / {
+                  proxy_pass http://jellyfin;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+                  proxy_buffering off;
+              }
+              location = /web/ {
+                  proxy_pass http://jellyfin/web/index.html;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+              }
+              location /socket {
+                  proxy_pass http://jellyfin;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+              }
+              # qbittorrent-nox
+              location /torrent/ {
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Protocol $scheme;
+                  proxy_set_header X-Forwarded-Host $http_host;
+                  proxy_pass  http://qbittorrent;
               }
             }
+          }
 
     - name: Test Nginx configuration
       command: nginx -t
