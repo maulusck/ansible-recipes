@@ -22,7 +22,7 @@
     kernel: "linux-zen"
     timezone: "UTC"
 
-    root_partition_size: "19G"
+    root_partition_size: "25G"
 
     # Packages for minimal media/RT station
     packages:
@@ -53,7 +53,7 @@
 
     # Post-install fine-tuning
     system_services:
-      - cpupower
+      # - cpupower
       - jellyfin
       - qbittorrent-nox
       - ufw
@@ -320,17 +320,6 @@
       ufw:
         state: enabled
 
-    - name: Reload systemd
-      systemd:
-        daemon_reload: true
-
-    - name: Enable and start services
-      systemd:
-        name: "{{ item }}"
-        enabled: true
-        state: started
-      loop: "{{ system_services }}"
-
     # Optional secondary disk mount
     - name: Mount secondary disk to /media
       when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
@@ -382,6 +371,7 @@
         mode: "0755"
 
     - name: Deploy full nginx.conf with Jellyfin proxy
+      notify: Restart nginx
       copy:
         dest: /etc/nginx/nginx.conf
         mode: "0644"
@@ -459,7 +449,19 @@
       register: nginx_test
       failed_when: nginx_test.rc != 0
 
-    - name: Restart Nginx
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
+
+    - name: Enable and start services
+      systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: "{{ system_services }}"
+
+  handlers:
+    - name: Restart nginx
       systemd:
         name: nginx
         enabled: true
