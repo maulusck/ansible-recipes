@@ -128,6 +128,11 @@
         system_services: "{{ (system_services | default([])) + (bare_metal_services | default([])) }}"
       when: not is_vm
 
+    - name: Set flags for conditional blocks
+      set_fact:
+        ssl_enabled: "{{ ssl_cert_path is defined and ssl_cert_path | length > 0 }}"
+        secondary_disk_enabled: "{{ secondary_disk_uuid is defined and secondary_disk_uuid | length > 0 }}"
+
   tasks:
     - name: Inform user about execute_system_installation variable and pause
       pause:
@@ -397,19 +402,17 @@
           UrlRoot=/admin
       notify: restart cockpit
 
-    - name: Allow UFW application profiles
+    - name: Configure UFW rules
       ufw:
         rule: allow
-        name: "{{ item }}"
-      loop: "{{ ufw_profiles }}"
-      notify: restart ufw
-
-    - name: Allow UFW raw ports
-      ufw:
-        rule: allow
-        port: "{{ item.split('/')[0] }}"
-        proto: "{{ item.split('/')[1] }}"
-      loop: "{{ ufw_ports }}"
+        name: "{{ item.name | default(omit) }}"
+        port: "{{ item.port | default(omit) }}"
+        proto: "{{ item.proto | default(omit) }}"
+      loop: >
+        {{
+          ufw_profiles | map('regex_replace', '^(.*)$', '{"name": "\\1"}') | map('from_json') | list +
+          ufw_ports | map('regex_replace', '^([0-9]+)/([a-z]+)$', '{"port": "\\1", "proto": "\\2"}') | map('from_json') | list
+        }}
       notify: restart ufw
 
     - name: Enable UFW
@@ -433,9 +436,7 @@
             fstype: "{{ secondary_disk_fs | default('ext4') }}"
             opts: "{{ secondary_disk_opts }}"
             state: mounted
-      when:
-        - secondary_disk_uuid is defined
-        - secondary_disk_uuid | length > 0
+      when: secondary_disk_enabled
 
     - name: Copy SSL cert and key
       block:
@@ -458,9 +459,7 @@
             mode: "0600"
             remote_src: true
           notify: restart nginx
-      when:
-        - ssl_cert_path is defined
-        - ssl_cert_path | length > 0
+      when: ssl_enabled
 
     - name: Create web root directory
       file:
