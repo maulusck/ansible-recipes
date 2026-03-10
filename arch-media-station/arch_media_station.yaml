@@ -313,13 +313,6 @@
 
     - name: Configure Snapper root snapshots
       block:
-        - name: Create /.snapshots directory
-          file:
-            path: /.snapshots
-            state: directory
-            mode: "0755"
-          notify: regenerate grub config
-
         - name: Create snapper root config
           command: snapper -c root create-config /
           args:
@@ -522,7 +515,7 @@
                 proxy_set_header X-Forwarded-Proto $scheme; 
                 proxy_set_header X-Forwarded-Protocol $scheme; 
                 proxy_set_header X-Forwarded-Host $http_host; 
-                proxy_pass http://qbittorrent; 
+                proxy_pass http://qbittorrent/; 
               }
             }
           }
