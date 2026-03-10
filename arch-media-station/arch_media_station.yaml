@@ -309,6 +309,7 @@
         name: "{{ packages }}"
         state: "{{ 'latest' if (update_system_packages | default(false)) else 'present' }}"
         update_cache: yes
+      notify: manage system services
 
     - name: Configure Snapper root snapshots
       block:
@@ -317,40 +318,35 @@
             path: /.snapshots
             state: directory
             mode: "0755"
+          notify: regenerate grub config
 
         - name: Create snapper root config
           command: snapper -c root create-config /
           args:
             creates: /etc/snapper/configs/root
+          notify: regenerate grub config
 
         - name: Disable timeline snapshots
           lineinfile:
             path: /etc/snapper/configs/root
             regexp: "^TIMELINE_CREATE="
             line: "TIMELINE_CREATE='no'"
+          notify: regenerate grub config
 
         - name: Set snapshot limit
           lineinfile:
             path: /etc/snapper/configs/root
             regexp: "^NUMBER_LIMIT="
             line: "NUMBER_LIMIT='{{ snapshot_limit }}'"
+          notify: regenerate grub config
 
         - name: Set important snapshot limit
           lineinfile:
             path: /etc/snapper/configs/root
             regexp: "^NUMBER_LIMIT_IMPORTANT="
             line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
+          notify: regenerate grub config
 
-        - name: Enable grub-btrfsd service
-          systemd:
-            name: grub-btrfsd
-            enabled: true
-            state: started
-
-        - name: Regenerate grub config
-          command: grub-mkconfig -o /boot/grub/grub.cfg
-
-    # Media folders
     - name: Create Jellyfin media root directory
       file:
         path: /media
@@ -379,6 +375,7 @@
         path: /etc/systemd/system/qbittorrent-nox.service.d
         state: directory
         mode: "0755"
+      notify: manage system services
 
     - name: Configure qbittorrent service override
       copy:
@@ -387,12 +384,14 @@
         content: |
           [Service]
           User={{ user_name }}
+      notify: manage system services
 
     - name: Allow UFW application profiles
       ufw:
         rule: allow
         name: "{{ item }}"
       loop: "{{ ufw_profiles }}"
+      notify: restart ufw
 
     - name: Allow UFW raw ports
       ufw:
@@ -400,16 +399,13 @@
         port: "{{ item.split('/')[0] }}"
         proto: "{{ item.split('/')[1] }}"
       loop: "{{ ufw_ports }}"
+      notify: restart ufw
 
     - name: Enable UFW
       ufw:
         state: enabled
 
-    # Optional secondary disk
     - name: Mount secondary disk to /media
-      when:
-        - secondary_disk_uuid is defined
-        - secondary_disk_uuid | length > 0
       block:
         - name: Ensure /media exists
           file:
@@ -426,12 +422,11 @@
             fstype: "{{ secondary_disk_fs | default('ext4') }}"
             opts: "{{ secondary_disk_opts }}"
             state: mounted
-
-    # Optional SSL
-    - name: Copy SSL cert and key
       when:
-        - ssl_cert_path is defined
-        - ssl_cert_path | length > 0
+        - secondary_disk_uuid is defined
+        - secondary_disk_uuid | length > 0
+
+    - name: Copy SSL cert and key
       block:
         - name: Copy SSL certificate
           copy:
@@ -441,6 +436,7 @@
             group: root
             mode: "0644"
             remote_src: true
+          notify: restart nginx
 
         - name: Copy SSL private key
           copy:
@@ -450,8 +446,11 @@
             group: root
             mode: "0600"
             remote_src: true
+          notify: restart nginx
+      when:
+        - ssl_cert_path is defined
+        - ssl_cert_path | length > 0
 
-    # Nginx with Jellyfin proxy
     - name: Create web root directory
       file:
         path: /var/www/html
@@ -459,6 +458,7 @@
         owner: root
         group: root
         mode: "0755"
+      notify: restart nginx
 
     - name: Deploy nginx configuration
       copy:
@@ -526,6 +526,7 @@
               }
             }
           }
+      notify: restart nginx
 
     - name: Test nginx configuration
       command: nginx -t
@@ -533,21 +534,32 @@
       changed_when: false
       failed_when: nginx_test.rc != 0
 
-    - name: Reload systemd daemon
-      systemd:
-        daemon_reload: true
-
-    - name: Enable and start system services
-      systemd:
-        name: "{{ item }}"
-        enabled: true
-        state: started
-      loop: "{{ system_services }}"
+    - name: Flush handlers
+      meta: flush_handlers
 
   handlers:
-    - name: Restart nginx
+    - name: regenerate grub config
+      command: grub-mkconfig -o /boot/grub/grub.cfg
+      listen: "regenerate grub config"
+
+    - name: restart nginx
       systemd:
         name: nginx
-        enabled: true
         state: restarted
+        enabled: true
       listen: "restart nginx"
+
+    - name: restart ufw
+      systemd:
+        name: ufw
+        state: restarted
+        enabled: true
+      listen: "restart ufw"
+
+    - name: manage system services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop: "{{ system_services }}"
+      listen: "manage system services"
