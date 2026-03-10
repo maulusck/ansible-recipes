@@ -67,7 +67,6 @@
       - jellyfin
       - qbittorrent-nox
       - ufw
-    # only installed on bare-metal hosts
     bare_metal_services:
       - cpupower
 
@@ -89,15 +88,15 @@
     ntp_enabled: true
     parallel_downloads: 0
 
-    # encrypted password hashes
+    # Encrypted password hashes
     root_password_hash: "{{ root_password | password_hash('sha512') }}"
     user_password_hash: "{{ user_password | password_hash('sha512') }}"
 
-    # selectable network options:
+    # Selectable network options:
     # type: "nm" = NetworkManager, "nm_iwd" = NM with iwd, "manual" = manual config
     network_type: "nm_iwd"
 
-    # manual network example (only used if network_type="manual")
+    # Manual network example (only used if network_type="manual")
     manual_nics:
       - iface: "ens18"
         dhcp: true
@@ -116,13 +115,13 @@
         system_services: "{{ system_services + bare_metal_services }}"
       when: not is_vm
 
-    - name: Inform user about the execute_system_installation variable and pause
+    - name: Inform user about execute_system_installation variable and pause
       pause:
         seconds: 3
-        prompt: >
-          [!] execute_system_installation flag not set. Run with '-e execute_system_installation=true' to proceed.
+        prompt: |
+          [!] execute_system_installation flag not set. 
+          Run with '-e execute_system_installation=true' to run the installation.
           Continuing...
-
       when: execute_system_installation is not defined
 
     - name: Run system installation
@@ -148,53 +147,119 @@
             mode: "0600"
             content: |
               {
-                "archinstall-language":"English",
-                "auth_config":{},
-                "bootloader_config":{"bootloader":"{{ bootloader | title }}","removable":true,"uki":false},
-                "custom_commands":[
-                  "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config"{% if network_type in ['nm','nm_iwd'] %},
+                "archinstall-language": "English",
+                "auth_config": {},
+                "bootloader_config": {
+                  "bootloader": "{{ bootloader | title }}",
+                  "removable": true,
+                  "uki": false
+                },
+                "custom_commands": [
+                  "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config"
+                  {%- if network_type in ['nm','nm_iwd'] %},
                   "systemctl enable sshd ufw",
-                  "systemctl enable NetworkManager"{% endif %}{% if network_type == 'nm_iwd' %},
+                  "systemctl enable NetworkManager"{% endif %}
+                  {%- if network_type == 'nm_iwd' %},
                   "systemctl enable iwd"{% endif %}
                 ],
-                "disk_config":{
-                  "config_type":"default_layout",
-                  "btrfs_options":{"snapshot_config":null,"compress":"zstd"},
-                  "device_modifications":[
+                "disk_config": {
+                  "config_type": "default_layout",
+                  "btrfs_options": {
+                    "snapshot_config": null,
+                    "compress": "zstd"
+                  },
+                  "device_modifications": [
                     {
-                      "device":"{{ disk_device }}",
-                      "wipe":true,
-                      "partitions":[
-                        {"dev_path":null,"flags":["boot","esp"],"fs_type":"fat32","mountpoint":"/boot","mount_options":[],"btrfs":[],"obj_id":"{{ lookup('pipe','uuidgen') }}","start":{"sector_size":{"unit":"B","value":512},"unit":"MiB","value":1},"size":{"sector_size":{"unit":"B","value":512},"unit":"GiB","value":1},"status":"create","type":"primary"},
-                        {"dev_path":null,"flags":[],"fs_type":"btrfs","mountpoint":"/","mount_options":["compress=zstd","noatime"],"btrfs":[
-                          {"name":"@","mountpoint":"/"},
-                          {"name":"@home","mountpoint":"/home"},
-                          {"name":"@cache","mountpoint":"/var/cache"},
-                          {"name":"@log","mountpoint":"/var/log"},
-                          {"name":"@snapshots","mountpoint":"/.snapshots"}
-                        ],"obj_id":"{{ lookup('pipe','uuidgen') }}","start":{"sector_size":{"unit":"B","value":512},"unit":"B","value":1074790400},"size":{"sector_size":{"unit":"B","value":512},"unit":"B","value":{{ root_partition_size_bytes }} },"status":"create","type":"primary"}
+                      "device": "{{ disk_device }}",
+                      "wipe": true,
+                      "partitions": [
+                        {
+                          "dev_path": null,
+                          "flags": ["boot", "esp"],
+                          "fs_type": "fat32",
+                          "mountpoint": "/boot",
+                          "mount_options": [],
+                          "btrfs": [],
+                          "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                          "start": {
+                            "sector_size": {"unit": "B", "value": 512},
+                            "unit": "MiB",
+                            "value": 1
+                          },
+                          "size": {
+                            "sector_size": {"unit": "B", "value": 512},
+                            "unit": "GiB",
+                            "value": 1
+                          },
+                          "status": "create",
+                          "type": "primary"
+                        },
+                        {
+                          "dev_path": null,
+                          "flags": [],
+                          "fs_type": "btrfs",
+                          "mountpoint": "/",
+                          "mount_options": ["compress=zstd", "noatime"],
+                          "btrfs": [
+                            {"name": "@", "mountpoint": "/"},
+                            {"name": "@home", "mountpoint": "/home"},
+                            {"name": "@cache", "mountpoint": "/var/cache"},
+                            {"name": "@log", "mountpoint": "/var/log"},
+                            {"name": "@snapshots", "mountpoint": "/.snapshots"}
+                          ],
+                          "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                          "start": {
+                            "sector_size": {"unit": "B", "value": 512},
+                            "unit": "B",
+                            "value": 1074790400
+                          },
+                          "size": {
+                            "sector_size": {"unit": "B", "value": 512},
+                            "unit": "B",
+                            "value": {{ root_partition_size_bytes }}
+                          },
+                          "status": "create",
+                          "type": "primary"
+                        }
                       ]
                     }
                   ]
                 },
-                "hostname":"{{ hostname }}",
-                "kernels":["{{ kernel }}"],
-                "locale_config":{"kb_layout":"us","sys_enc":"UTF-8","sys_lang":"en_US.UTF-8"},
-                "mirror_config":{"custom_repositories":[],"custom_servers":[],"mirror_regions":{},"optional_repositories":[]},
-                "ntp":{{ ntp_enabled | lower }},
-                "packages":{{ packages | to_json }},
-                "parallel_downloads":{{ parallel_downloads }},
-                "profile_config":{"gfx_driver":"{{ profile_gfx_driver }}","greeter":{{ profile_greeter | to_json }},"profile":{"custom_settings":{{ profile_custom_settings | to_json }},"details":{{ profile_details | to_json }},"main":"{{ profile_main }}" }},
-                {% if network_type in ["nm","nm_iwd"] %}
-                "network_config":{"type":"{{ network_type }}"},
-                {% elif network_type == "manual" %}
-                "network_config":{"type":"manual","nics":{{ manual_nics | to_json }}},
-                {% endif %}
-                "script":null,
-                "services":[],
-                "swap":{"algorithm":"zstd","enabled":true},
-                "timezone":"{{ timezone }}",
-                "version":"3.0.15"
+                "hostname": "{{ hostname }}",
+                "kernels": ["{{ kernel }}"],
+                "locale_config": {
+                  "kb_layout": "us",
+                  "sys_enc": "UTF-8",
+                  "sys_lang": "en_US.UTF-8"
+                },
+                "mirror_config": {
+                  "custom_repositories": [],
+                  "custom_servers": [],
+                  "mirror_regions": {},
+                  "optional_repositories": []
+                },
+                "ntp": {{ ntp_enabled | lower }},
+                "packages": {{ packages | to_json }},
+                "parallel_downloads": {{ parallel_downloads }},
+                "profile_config": {
+                  "gfx_driver": "{{ profile_gfx_driver }}",
+                  "greeter": {{ profile_greeter | to_json }},
+                  "profile": {
+                    "custom_settings": {{ profile_custom_settings | to_json }},
+                    "details": {{ profile_details | to_json }},
+                    "main": "{{ profile_main }}"
+                  }
+                }
+                {%- if network_type in ["nm","nm_iwd"] %}
+                ,"network_config": {"type": "{{ network_type }}"}
+                {%- elif network_type == "manual" %}
+                ,"network_config": {"type": "manual", "nics": {{ manual_nics | to_json }}}
+                {%- endif %},
+                "script": null,
+                "services": [],
+                "swap": {"algorithm": "zstd", "enabled": true},
+                "timezone": "{{ timezone }}",
+                "version": "3.0.15"
               }
 
         - name: Copy Archinstall creds.json
@@ -203,9 +268,9 @@
             mode: "0600"
             content: |
               {
-              {% if disk_encryption_password is defined and disk_encryption_password | length > 0 %}
+              {%- if disk_encryption_password is defined and disk_encryption_password | length > 0 %}
                 "encryption_password": "{{ disk_encryption_password }}",
-              {% endif %}
+              {%- endif %}
                 "root_enc_password": "{{ root_password_hash }}",
                 "users": [
                   {
@@ -247,29 +312,43 @@
 
     - name: Configure Snapper root snapshots
       block:
-        - file: { path: /.snapshots, state: directory, mode: "0755" }
-        - command: snapper -c root create-config /
-          args: { creates: /etc/snapper/configs/root }
-        - lineinfile:
-            {
-              path: /etc/snapper/configs/root,
-              regexp: "^TIMELINE_CREATE=",
-              line: 'TIMELINE_CREATE="no"',
-            }
-        - lineinfile:
-            {
-              path: /etc/snapper/configs/root,
-              regexp: "^NUMBER_LIMIT=",
-              line: 'NUMBER_LIMIT="{{ snapshot_limit }}"',
-            }
-        - lineinfile:
-            {
-              path: /etc/snapper/configs/root,
-              regexp: "^NUMBER_LIMIT_IMPORTANT=",
-              line: 'NUMBER_LIMIT_IMPORTANT="{{ snapshot_important_limit }}"',
-            }
-        - systemd: { name: grub-btrfsd, enabled: true, state: started }
-        - command: grub-mkconfig -o /boot/grub/grub.cfg
+        - name: Create /.snapshots directory
+          file:
+            path: /.snapshots
+            state: directory
+            mode: "0755"
+
+        - name: Create snapper root config
+          command: snapper -c root create-config /
+          args:
+            creates: /etc/snapper/configs/root
+
+        - name: Disable timeline snapshots
+          lineinfile:
+            path: /etc/snapper/configs/root
+            regexp: "^TIMELINE_CREATE="
+            line: "TIMELINE_CREATE='no'"
+
+        - name: Set snapshot limit
+          lineinfile:
+            path: /etc/snapper/configs/root
+            regexp: "^NUMBER_LIMIT="
+            line: "NUMBER_LIMIT='{{ snapshot_limit }}'"
+
+        - name: Set important snapshot limit
+          lineinfile:
+            path: /etc/snapper/configs/root
+            regexp: "^NUMBER_LIMIT_IMPORTANT="
+            line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
+
+        - name: Enable grub-btrfsd service
+          systemd:
+            name: grub-btrfsd
+            enabled: true
+            state: started
+
+        - name: Regenerate grub config
+          command: grub-mkconfig -o /boot/grub/grub.cfg
 
     # Media folders
     - name: Create Jellyfin media root directory
@@ -290,15 +369,19 @@
 
     - name: Set CPU governor to performance
       lineinfile:
-        path: "/etc/default/cpupower-service.conf"
+        path: /etc/default/cpupower-service.conf
         regexp: "^#?GOVERNOR="
         line: "GOVERNOR='performance'"
         create: true
 
     - name: Ensure qBittorrent service override directory exists
-      file: path=/etc/systemd/system/qbittorrent-nox.service.d state=directory mode=0755
+      file:
+        path: /etc/systemd/system/qbittorrent-nox.service.d
+        state: directory
+        mode: "0755"
+
     - name: Configure qbittorrent service override
-    - copy:
+      copy:
         dest: /etc/systemd/system/qbittorrent-nox.service.d/override.conf
         mode: "0644"
         content: |
@@ -306,23 +389,27 @@
           User={{ user_name }}
 
     - name: Allow UFW application profiles
-    - ufw: { rule: allow, name: "{{ item }}" }
+      ufw:
+        rule: allow
+        name: "{{ item }}"
       loop: "{{ ufw_profiles }}"
 
     - name: Allow UFW raw ports
-    - ufw:
-        {
-          rule: allow,
-          port: "{{ item.split('/')[0] }}",
-          proto: "{{ item.split('/')[1] }}",
-        }
+      ufw:
+        rule: allow
+        port: "{{ item.split('/')[0] }}"
+        proto: "{{ item.split('/')[1] }}"
       loop: "{{ ufw_ports }}"
+
     - name: Enable UFW
-    - ufw: { state: enabled }
+      ufw:
+        state: enabled
 
     # Optional secondary disk
     - name: Mount secondary disk to /media
-      when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
+      when:
+        - secondary_disk_uuid is defined
+        - secondary_disk_uuid | length > 0
       block:
         - name: Ensure /media exists
           file:
@@ -331,6 +418,7 @@
             owner: "{{ user_name }}"
             group: jellyfin
             mode: "2775"
+
         - name: Add secondary disk to /etc/fstab
           mount:
             path: /media
@@ -341,37 +429,39 @@
 
     # Optional SSL
     - name: Copy SSL cert and key
-      when: ssl_cert_path is defined and ssl_cert_path | length > 0
+      when:
+        - ssl_cert_path is defined
+        - ssl_cert_path | length > 0
       block:
-        - copy:
-            {
-              src: "{{ ssl_cert_path }}/fullchain.pem",
-              dest: "/etc/ssl/private/{{ hostname }}.crt",
-              owner: root,
-              group: root,
-              mode: "0644",
-              remote_src: true,
-            }
-        - copy:
-            {
-              src: "{{ ssl_cert_path }}/privkey.pem",
-              dest: "/etc/ssl/private/{{ hostname }}.key",
-              owner: root,
-              group: root,
-              mode: "0600",
-              remote_src: true,
-            }
+        - name: Copy SSL certificate
+          copy:
+            src: "{{ ssl_cert_path }}/fullchain.pem"
+            dest: "/etc/ssl/private/{{ hostname }}.crt"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+
+        - name: Copy SSL private key
+          copy:
+            src: "{{ ssl_cert_path }}/privkey.pem"
+            dest: "/etc/ssl/private/{{ hostname }}.key"
+            owner: root
+            group: root
+            mode: "0600"
+            remote_src: true
 
     # Nginx with Jellyfin proxy
-    - file:
-        {
-          path: /var/www/html,
-          state: directory,
-          owner: root,
-          group: root,
-          mode: "0755",
-        }
-    - copy:
+    - name: Create web root directory
+      file:
+        path: /var/www/html
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy nginx configuration
+      copy:
         dest: /etc/nginx/nginx.conf
         mode: "0644"
         content: |
@@ -385,31 +475,79 @@
             sendfile on;
             keepalive_timeout 65;
             server_tokens off;
-            #root /var/www/html;
-            #index index.html;
             server {
               listen 80{{ ' default_server' if not (ssl_cert_path | length > 0) else '' }};
               server_name {{ hostname }};
-          {% if ssl_cert_path | length > 0 %}
+          {%- if ssl_cert_path | length > 0 %}
               listen 443 ssl http2;
               ssl_certificate /etc/ssl/private/{{ hostname }}.crt;
               ssl_certificate_key /etc/ssl/private/{{ hostname }}.key;
-          {% endif %}
+          {%- endif %}
               location = / { return 302 {{ 'https' if ssl_cert_path | length > 0 else 'http' }}://$host/web/; }
-              location / { proxy_pass http://jellyfin; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; proxy_set_header X-Forwarded-Protocol $scheme; proxy_set_header X-Forwarded-Host $http_host; proxy_buffering off; }
-              location = /web/ { proxy_pass http://jellyfin/web/index.html; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; proxy_set_header X-Forwarded-Protocol $scheme; proxy_set_header X-Forwarded-Host $http_host; }
-              location /socket { proxy_pass http://jellyfin; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; proxy_set_header X-Forwarded-Protocol $scheme; proxy_set_header X-Forwarded-Host $http_host; }
-              location /torrent/ { proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; proxy_set_header X-Forwarded-Protocol $scheme; proxy_set_header X-Forwarded-Host $http_host; proxy_pass  http://qbittorrent; }
+              location / { 
+                proxy_pass http://jellyfin; 
+                proxy_set_header Host $host; 
+                proxy_set_header X-Real-IP $remote_addr; 
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+                proxy_set_header X-Forwarded-Proto $scheme; 
+                proxy_set_header X-Forwarded-Protocol $scheme; 
+                proxy_set_header X-Forwarded-Host $http_host; 
+                proxy_buffering off; 
+              }
+              location = /web/ { 
+                proxy_pass http://jellyfin/web/index.html; 
+                proxy_set_header Host $host; 
+                proxy_set_header X-Real-IP $remote_addr; 
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+                proxy_set_header X-Forwarded-Proto $scheme; 
+                proxy_set_header X-Forwarded-Protocol $scheme; 
+                proxy_set_header X-Forwarded-Host $http_host; 
+              }
+              location /socket { 
+                proxy_pass http://jellyfin; 
+                proxy_http_version 1.1; 
+                proxy_set_header Upgrade $http_upgrade; 
+                proxy_set_header Connection "upgrade"; 
+                proxy_set_header Host $host; 
+                proxy_set_header X-Real-IP $remote_addr; 
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+                proxy_set_header X-Forwarded-Proto $scheme; 
+                proxy_set_header X-Forwarded-Protocol $scheme; 
+                proxy_set_header X-Forwarded-Host $http_host; 
+              }
+              location /torrent/ { 
+                proxy_set_header Host $host; 
+                proxy_set_header X-Real-IP $remote_addr; 
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+                proxy_set_header X-Forwarded-Proto $scheme; 
+                proxy_set_header X-Forwarded-Protocol $scheme; 
+                proxy_set_header X-Forwarded-Host $http_host; 
+                proxy_pass http://qbittorrent; 
+              }
             }
           }
 
-    - command: nginx -t
+    - name: Test nginx configuration
+      command: nginx -t
       register: nginx_test
+      changed_when: false
       failed_when: nginx_test.rc != 0
 
-    - systemd: { daemon_reload: true }
-    - systemd: { name: "{{ item }}", enabled: true, state: started }
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Enable and start system services
+      systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
       loop: "{{ system_services }}"
 
   handlers:
-    - systemd: { name: nginx, enabled: true, state: restarted }
+    - name: Restart nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: restarted
+      listen: "restart nginx"
