@@ -9,11 +9,7 @@
     ansible_user: "root"
     ansible_port: 22
     ansible_password: "testing"
-    ansible_ssh_common_args: >-
-      -o StrictHostKeyChecking=no 
-      -o ControlMaster=auto 
-      -o ControlPersist=600s
-    ansible_ssh_pipelining: true
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
     # Installation variables
     root_password: "testing"
     user_name: "mediauser"
