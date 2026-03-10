@@ -9,8 +9,11 @@
     ansible_user: "root"
     ansible_port: 22
     ansible_password: "testing"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
-
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=no 
+      -o ControlMaster=auto 
+      -o ControlPersist=600s
+    ansible_ssh_pipelining: true
     # Installation variables
     root_password: "testing"
     user_name: "mediauser"
@@ -33,6 +36,7 @@
       - cockpit
       - ffmpeg
       - grub-btrfs
+      - inotify-tools
       - jellyfin-ffmpeg
       - jellyfin-mpv-shim
       - jellyfin-server
@@ -63,6 +67,7 @@
 
     # Services
     system_services:
+      - cockpit.socket
       - grub-btrfsd
       - jellyfin
       - qbittorrent-nox
@@ -104,17 +109,26 @@
         gateway: null
         dns: []
 
-  tasks:
-    - name: Determine if host is a VM
-      set_fact:
-        is_vm: "{{ ansible_virtualization_type in ['kvm','vmware','virtualbox','qemu','hyperv'] }}"
+    archinstall_custom_commands: >-
+      {{ [
+        "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config",
+        "systemctl enable sshd ufw"
+      ] +
+      (["systemctl enable NetworkManager"] if network_type in ['nm','nm_iwd'] else []) +
+      (["systemctl enable iwd"] if network_type == 'nm_iwd' else []) }}
 
-    - name: Add bare metal packages & services if not VM
+  pre_tasks:
+    - name: Detect virtualization type (new ansible_facts syntax)
       set_fact:
-        packages: "{{ packages + bare_metal_packages }}"
-        system_services: "{{ system_services + bare_metal_services }}"
+        is_vm: "{{ ansible_facts.virtualization_type in ['kvm','vmware','virtualbox','qemu','hyperv'] }}"
+
+    - name: Merge bare metal packages/services (non-VM only)
+      set_fact:
+        packages: "{{ (packages | default([])) + (bare_metal_packages | default([])) }}"
+        system_services: "{{ (system_services | default([])) + (bare_metal_services | default([])) }}"
       when: not is_vm
 
+  tasks:
     - name: Inform user about execute_system_installation variable and pause
       pause:
         seconds: 3
@@ -154,14 +168,7 @@
                   "removable": true,
                   "uki": false
                 },
-                "custom_commands": [
-                  "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config"
-                  {%- if network_type in ['nm','nm_iwd'] %},
-                  "systemctl enable sshd ufw",
-                  "systemctl enable NetworkManager"{% endif %}
-                  {%- if network_type == 'nm_iwd' %},
-                  "systemctl enable iwd"{% endif %}
-                ],
+                "custom_commands": {{ archinstall_custom_commands | to_json }},
                 "disk_config": {
                   "config_type": "default_layout",
                   "btrfs_options": {
@@ -309,7 +316,7 @@
         name: "{{ packages }}"
         state: "{{ 'latest' if (update_system_packages | default(false)) else 'present' }}"
         update_cache: yes
-      notify: manage system services
+      notify: reload system services
 
     - name: Configure Snapper root snapshots
       block:
@@ -368,7 +375,6 @@
         path: /etc/systemd/system/qbittorrent-nox.service.d
         state: directory
         mode: "0755"
-      notify: manage system services
 
     - name: Configure qbittorrent service override
       copy:
@@ -377,7 +383,19 @@
         content: |
           [Service]
           User={{ user_name }}
-      notify: manage system services
+      notify: restart qbittorrent
+
+    - name: Configure Cockpit to serve under /admin
+      copy:
+        dest: /etc/cockpit/cockpit.conf
+        mode: "0644"
+        content: |
+          [WebService]
+          # Origins = http://{{ hostname }} https://{{ hostname }} wss://{{ hostname }}
+          Origins = *
+          ProtocolHeader = X-Forwarded-Proto
+          UrlRoot=/admin
+      notify: restart cockpit
 
     - name: Allow UFW application profiles
       ufw:
@@ -461,6 +479,7 @@
           worker_processes auto;
           events { worker_connections 1024; }
           http {
+            upstream cockpit { server 127.0.0.1:9090; }
             upstream jellyfin { server 127.0.0.1:8096; }
             upstream qbittorrent { server 127.0.0.1:8080; }
             include mime.types;
@@ -517,6 +536,17 @@
                 proxy_set_header X-Forwarded-Host $http_host; 
                 proxy_pass http://qbittorrent/; 
               }
+              location /admin/ {
+                proxy_ssl_verify off;
+                proxy_pass http://cockpit/admin/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_http_version 1.1;
+                proxy_buffering off;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                gzip off;
+              }
             }
           }
       notify: restart nginx
@@ -527,6 +557,13 @@
       changed_when: false
       failed_when: nginx_test.rc != 0
 
+    - name: Enable and start system services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop: "{{ system_services }}"
+
     - name: Flush handlers
       meta: flush_handlers
 
@@ -535,24 +572,36 @@
       command: grub-mkconfig -o /boot/grub/grub.cfg
       listen: "regenerate grub config"
 
+    - name: restart cockpit
+      systemd:
+        name: cockpit.socket
+        state: restarted
+        daemon_reload: yes
+
     - name: restart nginx
       systemd:
         name: nginx
         state: restarted
         enabled: true
-      listen: "restart nginx"
+        daemon_reload: yes
+
+    - name: restart qbittorrent
+      systemd:
+        name: qbittorrent-nox
+        state: restarted
+        enabled: true
+        daemon_reload: yes
 
     - name: restart ufw
       systemd:
         name: ufw
         state: restarted
         enabled: true
-      listen: "restart ufw"
+        daemon_reload: yes
 
-    - name: manage system services
+    - name: reload system services
       systemd:
         name: "{{ item }}"
         state: started
         enabled: true
       loop: "{{ system_services }}"
-      listen: "manage system services"
