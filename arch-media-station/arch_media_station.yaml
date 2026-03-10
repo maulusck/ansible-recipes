@@ -398,17 +398,19 @@
           UrlRoot=/admin
       notify: restart cockpit
 
-    - name: Configure UFW rules
+    - name: Configure UFW rules for profiles
       ufw:
         rule: allow
-        name: "{{ item.name | default(omit) }}"
-        port: "{{ item.port | default(omit) }}"
-        proto: "{{ item.proto | default(omit) }}"
-      loop: >
-        {{
-          ufw_profiles | map('regex_replace', '^(.*)$', '{"name": "\\1"}') | map('from_json') | list +
-          ufw_ports | map('regex_replace', '^([0-9]+)/([a-z]+)$', '{"port": "\\1", "proto": "\\2"}') | map('from_json') | list
-        }}
+        name: "{{ item }}"
+      loop: "{{ ufw_profiles }}"
+      notify: restart ufw
+
+    - name: Configure UFW rules for ports
+      ufw:
+        rule: allow
+        port: "{{ item.split('/')[0] }}"
+        proto: "{{ item.split('/')[1] }}"
+      loop: "{{ ufw_ports }}"
       notify: restart ufw
 
     - name: Enable UFW
