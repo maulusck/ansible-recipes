@@ -563,26 +563,24 @@
       loop:
         - dest: /var/www/html/index.html
           content: |
-            <!doctype html><html><head><meta charset="utf-8"><title>ZEnITH</title>
-            <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-            <style>
-              body{background:#0c0d0e;color:#ddd;font-family:monospace;padding:40px;}
-              h1{color:#1793d1;font-weight:normal;display:flex;align-items:center;gap:10px;}
-              svg.logo{width:48px;height:48px;vertical-align:middle;}
-              a{display:block;margin:6px 0;color:#1793d1;text-decoration:none;}
-              a:hover{color:#fff;}
+            <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ZEnITH</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><style>
+            body{background:#0c0d0e;color:#ddd;font-family:monospace;padding:40px;text-align:left;font-size:18px;}
+            h1{color:#1793d1;font-weight:normal;display:flex;align-items:center;gap:10px;font-size:28px;}
+            svg.logo{width:48px;height:48px;vertical-align:middle;}
+            a{display:block;margin:6px 0;color:#1793d1;text-decoration:none;border:2px solid #1793d1;padding:6px 12px;border-radius:6px;transition:0.2s;font-size:18px;}
+            a:hover{color:#fff;border-color:#fff;}
+            a.logo-link{display:inline-block;margin:0;padding:0;border:none;} /* SVG link style */
+            a.logo-link:hover{color:inherit;border:none;}
+            @media(max-width:600px){
+              body{text-align:center;padding:20px;font-size:22px;}
+              h1{flex-direction:column;gap:8px;font-size:32px;}
+              svg.logo{width:64px;height:64px;margin:0 auto;}
+              a{margin:10px 0;padding:10px 16px;font-size:22px;}
+            }
             </style></head><body>
-            <h1><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-              <polygon points="100,10 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/>
-              <polygon points="100,30 170,170 30,170" fill="#1c1c1c"/>
-              <text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="24" font-weight="bold">ZEnITH</text>
-            </svg>ZEnITH - Arch Media Station</h1>
-            <a href="/web/" target="_blank">Jellyfin</a>
-            <a href="/torrent/" target="_blank">qBittorrent</a>
-            <a href="/admin/" target="_blank">Cockpit</a>
-            <a href="/stats/" target="_blank">Glances</a>
+            <h1><a href="https://goldrake.bot.nu/c/maulusck/ansible-recipes" class="logo-link" target="_blank"><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><polygon points="100,10 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/><polygon points="100,30 170,170 30,170" fill="#1c1c1c"/><text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="24" font-weight="bold">ZEnITH</text></svg></a>ZEnITH - Arch Media Station</h1>
+            <a href="/web/" target="_blank">Jellyfin</a><a href="/torrent/" target="_blank">qBittorrent</a><a href="/admin/" target="_blank">Cockpit</a><a href="/stats/" target="_blank">Glances</a>
             </body></html>
-
         - dest: /var/www/html/favicon.svg
           content: |
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
