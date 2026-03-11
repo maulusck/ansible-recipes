@@ -517,25 +517,17 @@
             group: root
             mode: "0700"
 
-        - name: Copy custom SSL certificate/key if provided
-          copy:
-            src: "{{ item.src }}"
-            dest: "{{ item.dest }}"
-            owner: root
-            group: root
-            mode: "{{ item.mode }}"
-          loop:
-            - {
-                src: "{{ ssl_cert_src }}",
-                dest: "{{ ssl_cert_file }}",
-                mode: "0644",
-              }
-            - {
-                src: "{{ ssl_key_src }}",
-                dest: "{{ ssl_key_file }}",
-                mode: "0600",
-              }
-          when: item.src | length > 0
+    - name: Copy custom SSL certificate/key if provided
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: "{{ ssl_cert_src }}", dest: "{{ ssl_cert_file }}", mode: "0644" }
+        - { src: "{{ ssl_key_src }}", dest: "{{ ssl_key_file }}", mode: "0600" }
+      when: item.src | length > 0
 
     - name: Generate self-signed SSL certificate if missing
       command: >
