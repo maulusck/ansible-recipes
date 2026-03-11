@@ -1,69 +1,114 @@
 ---
-- name: Arch Media Station - Setup
+# Zen Entertainment Integration Technology Haven
+- name: ZEnITH AMS - Arch Media Station - Setup
   hosts: all
   gather_facts: true
   become: true
+  # -------------------------------------------------------------------------
+  # Arch Media Station
+  # -------------------------------------------------------------------------
 
   vars:
-    # SSH connection
-    ansible_user: "root"
-    ansible_port: 22
-    ansible_password: "testing"
+    # -----------------------------
+    # SSH & Remote Connection
+    # -----------------------------
+    ansible_user: "root" # default SSH user for installation
+    ansible_port: 22 # SSH port
+    ansible_password: "testing" # password for ansible_user
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
-    # Installation variables
-    root_password: "testing"
-    user_name: "mediauser"
-    user_password: "testing"
-    hostname: "media-station"
-    disk_device: "/dev/sda"
-    disk_encryption_type: "none" # luks or none
-    disk_encryption_password: ""
-    bootloader: "grub"
-    kernel: "linux-zen"
-    timezone: "UTC"
 
-    root_partition_size: "25G"
-    snapshot_limit: 8
-    snapshot_important_limit: 4
+    # -----------------------------
+    # Installation Variables
+    # -----------------------------
+    root_password: "testing" # root password for system
+    user_name: "mediauser" # non-root user
+    user_password: "testing" # non-root user password
+    hostname: "media-station" # hostname for system
+    disk_device: "/dev/sda" # primary disk device
+    disk_encryption_type: "none" # allowed: 'luks' or 'none'
+    disk_encryption_password: "" # required if luks
+    bootloader: "grub" # allowed: 'grub', 'systemd-boot'
+    kernel: "linux-zen" # kernel package, e.g., 'linux', 'linux-zen', 'linux-lts'
+    timezone: "UTC" # timezone, e.g., 'Europe/Berlin'
 
-    # Packages definitions
+    root_partition_size: "25G" # root partition size
+    snapshot_limit: 8 # snapper normal snapshot limit
+    snapshot_important_limit: 4 # snapper important snapshot limit
+
+    # -----------------------------
+    # Packages Definitions
+    # -----------------------------
     packages:
+      # Core filesystem & snapshots
       - btrfs-progs
-      - cockpit
-      - ffmpeg
+      - snapper
       - grub-btrfs
-      - inotify-tools
-      - jellyfin-ffmpeg
-      - jellyfin-mpv-shim
+      # Media server & playback
       - jellyfin-server
       - jellyfin-web
-      - nfs-utils
+      - jellyfin-ffmpeg
+      - jellyfin-mpv-shim
+      - ffmpeg
+      - mediainfo
+      - mpv
+      # Networking & remote access
       - nginx
       - openssh
       - openvpn
-      - python-jellyfin-apiclient
-      - qbittorrent-nox
+      - nfs-utils
       - rclone
       - rsync
-      - snap-pac
-      - snapper
+      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}" # network manager optional
+      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}" # iwd optional for NM+IWD
+      # Security & firewall
       - ufw
-      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
-      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}"
+      - openssl
+      # System & monitoring
+      - cockpit
+      - glances
+      - inotify-tools
+      - python-jellyfin-apiclient
+      - qbittorrent-nox
+      - snap-pac
+      # Monitoring tools (TUI-friendly)
+      - htop
+      - bmon
+      - btop
+      - iotop
+      # File management & utilities
+      - mc # single, best TUI file manager (Midnight Commander)
+      - ncdu # disk usage analyzer
+      - duf # disk free utility (modern)
+      - bat # cat replacement with syntax highlighting
 
+    # -----------------------------
+    # Bare Metal Packages
+    # Only installed on physical machines (not VM)
+    # Useful for performance tuning, disk, temperature, network monitoring
+    # -----------------------------
     bare_metal_packages:
-      - cpupower
+      - cpupower # CPU frequency/performance tuning
+      - smartmontools # disk health monitoring (S.M.A.R.T.)
+      - lm_sensors # CPU/GPU/system temperature monitoring
+      - hdparm # disk parameter tweaks
+      - nvme-cli # NVMe SSD monitoring
+      - ethtool # network interface diagnostics
 
-    # Desktop/graphics profile
-    profile_gfx_driver: "All open-source" # e.g., "Intel", "AMD", "Nvidia (proprietary)"
-    profile_greeter: null # e.g., "gdm", "lightdm", null
-    profile_main: "Xorg" # "Xorg" or "Wayland"
-    profile_custom_settings: {} # any key/value custom settings
+    # -----------------------------
+    # Desktop / Graphics Profile
+    # -----------------------------
+    profile_gfx_driver: "All open-source" # allowed: 'Intel', 'AMD', 'Nvidia (proprietary)', etc.
+    profile_greeter: null # allowed: 'gdm', 'lightdm', null (headless)
+    profile_main: "Xorg" # allowed: 'Xorg', 'Wayland'
+    profile_custom_settings: {} # custom key/value settings for profile
     profile_details: [] # extra profile details if needed
 
-    # Services
+    # -----------------------------
+    # System Services
+    # -----------------------------
     system_services:
       - cockpit.socket
+      - glances-web
       - grub-btrfsd
       - jellyfin
       - qbittorrent-nox
@@ -71,33 +116,48 @@
     bare_metal_services:
       - cpupower
 
+    # -----------------------------
+    # Automatic Updates
+    # -----------------------------
+    enable_automatic_updates: false # true to enable daily automatic updates
+    update_log_file: "/var/log/ams-update.log"
+
+    # -----------------------------
+    # UFW Firewall Profiles and Ports
+    # -----------------------------
     ufw_profiles:
       - SSH
-      - "{{ 'WWW Secure' if ssl_cert_path is defined and ssl_cert_path | length > 0 else 'WWW' }}"
+      - WWW
+      - "WWW Secure"
     ufw_ports:
       - 32400/tcp # Jellyfin
 
-    # Optional secondary disk
-    secondary_disk_uuid: "" # leave empty to skip
+    # -----------------------------
+    # Optional Secondary Disk
+    # -----------------------------
+    secondary_disk_uuid: "" # leave empty to skip mounting secondary disk
     secondary_disk_fs: "ext4" # optional, defaults to ext4
-    secondary_disk_opts: "defaults" # same
+    secondary_disk_opts: "defaults,noatime,nodiratime"
 
-    # Optional SSL certs path on controller
-    # Must contain two files: fullchain.pem (certificate) and privkey.pem (private key)
-    # leave empty to skip SSL
-    ssl_cert_path: ""
+    # -----------------------------
+    # SSL Configuration
+    # -----------------------------
+    # SSL directory
+    ssl_cert_dir: "/etc/ssl/private"
+    # Optional custom cert/key
+    ssl_cert_src: "" # leave empty to
+    ssl_key_src: "" # e.g. /root/mykey.pem
+    # Destination cert/key names (computed)
+    ssl_cert_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.crt' }}"
+    ssl_key_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.key' }}"
+    ssl_subject: "/C=US/ST=None/L=None/O=MediaStation/OU=Server"
+
+    # -----------------------------
+    # Network
+    # -----------------------------
     ntp_enabled: true
-    parallel_downloads: 0
-
-    # Encrypted password hashes
-    root_password_hash: "{{ root_password | password_hash('sha512') }}"
-    user_password_hash: "{{ user_password | password_hash('sha512') }}"
-
-    # Selectable network options:
-    # type: "nm" = NetworkManager, "nm_iwd" = NM with iwd, "manual" = manual config
-    network_type: "nm_iwd"
-
-    # Manual network example (only used if network_type="manual")
+    parallel_downloads: 5
+    network_type: "nm_iwd" # allowed: 'nm', 'nm_iwd', 'manual'
     manual_nics:
       - iface: "ens18"
         dhcp: true
@@ -105,6 +165,15 @@
         gateway: null
         dns: []
 
+    # -----------------------------
+    # Password Hashes (SHA512)
+    # -----------------------------
+    root_password_hash: "{{ root_password | password_hash('sha512') }}"
+    user_password_hash: "{{ user_password | password_hash('sha512') }}"
+
+    # -----------------------------
+    # Archinstall Custom Commands
+    # -----------------------------
     archinstall_custom_commands: >-
       {{ [
         "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config",
@@ -113,21 +182,24 @@
       (["systemctl enable NetworkManager"] if network_type in ['nm','nm_iwd'] else []) +
       (["systemctl enable iwd"] if network_type == 'nm_iwd' else []) }}
 
+  # -------------------------------------------------------------------------
+  # Pre-tasks
+  # -------------------------------------------------------------------------
   pre_tasks:
-    - name: Detect virtualization type (new ansible_facts syntax)
+    - name: Detect virtualization type
       set_fact:
         is_vm: "{{ ansible_facts.virtualization_type in ['kvm','vmware','virtualbox','qemu','hyperv'] }}"
 
-    - name: Merge bare metal packages/services (non-VM only)
+    - name: Merge bare metal packages/services (only on physical machines)
       set_fact:
         packages: "{{ (packages | default([])) + (bare_metal_packages | default([])) }}"
         system_services: "{{ (system_services | default([])) + (bare_metal_services | default([])) }}"
       when: not is_vm
 
-    - name: Set flags for conditional blocks
+    - name: Resolve SSL certificate paths
       set_fact:
-        ssl_enabled: "{{ ssl_cert_path is defined and ssl_cert_path | length > 0 }}"
-        secondary_disk_enabled: "{{ secondary_disk_uuid is defined and secondary_disk_uuid | length > 0 }}"
+        ssl_cert_file: "{{ ssl_cert_file if ssl_cert_file | length > 0 else ssl_cert_dir ~ '/' ~ hostname ~ '.crt' }}"
+        ssl_key_file: "{{ ssl_key_file if ssl_key_file | length > 0 else ssl_cert_dir ~ '/' ~ hostname ~ '.key' }}"
 
   tasks:
     - name: Inform user about execute_system_installation variable and pause
@@ -142,20 +214,6 @@
     - name: Run system installation
       when: execute_system_installation is defined
       block:
-        - name: Calculate root partition size in bytes
-          set_fact:
-            root_partition_size_bytes: >-
-              {%- set s = root_partition_size | upper -%}
-              {%- if s.endswith('G') -%}
-              {{ (s[:-1] | int) * 1024 * 1024 * 1024 }}
-              {%- elif s.endswith('M') -%}
-              {{ (s[:-1] | int) * 1024 * 1024 }}
-              {%- elif s.endswith('B') -%}
-              {{ s[:-1] | int }}
-              {%- else -%}
-              {{ s | int }}
-              {%- endif -%}
-
         - name: Copy Archinstall config.json (Garuda-style)
           copy:
             dest: /tmp/config.json
@@ -172,6 +230,7 @@
                 "custom_commands": {{ archinstall_custom_commands | to_json }},
                 "disk_config": {
                   "config_type": "default_layout",
+                  "encryption": "{{ disk_encryption_type }}",
                   "btrfs_options": {
                     "snapshot_config": null,
                     "compress": "zstd"
@@ -224,7 +283,7 @@
                           "size": {
                             "sector_size": {"unit": "B", "value": 512},
                             "unit": "B",
-                            "value": {{ root_partition_size_bytes }}
+                            "value": {{ root_partition_size | human_to_bytes }}
                           },
                           "status": "create",
                           "type": "primary"
@@ -276,7 +335,7 @@
             mode: "0600"
             content: |
               {
-              {%- if disk_encryption_password is defined and disk_encryption_password | length > 0 %}
+              {%- if disk_encryption_type == 'luks' %}
                 "encryption_password": "{{ disk_encryption_password }}",
               {%- endif %}
                 "root_enc_password": "{{ root_password_hash }}",
@@ -316,7 +375,8 @@
       pacman:
         name: "{{ packages }}"
         state: "{{ 'latest' if (update_system_packages | default(false)) else 'present' }}"
-        update_cache: yes
+        update_cache: true
+        extra_args: --needed
       notify: reload system services
 
     - name: Configure Snapper root snapshots
@@ -327,25 +387,21 @@
             creates: /etc/snapper/configs/root
           notify: regenerate grub config
 
-        - name: Disable timeline snapshots
+        - name: Configure snapper
           lineinfile:
             path: /etc/snapper/configs/root
-            regexp: "^TIMELINE_CREATE="
-            line: "TIMELINE_CREATE='no'"
-          notify: regenerate grub config
-
-        - name: Set snapshot limit
-          lineinfile:
-            path: /etc/snapper/configs/root
-            regexp: "^NUMBER_LIMIT="
-            line: "NUMBER_LIMIT='{{ snapshot_limit }}'"
-          notify: regenerate grub config
-
-        - name: Set important snapshot limit
-          lineinfile:
-            path: /etc/snapper/configs/root
-            regexp: "^NUMBER_LIMIT_IMPORTANT="
-            line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
+            regexp: "{{ item.regexp }}"
+            line: "{{ item.line }}"
+          loop:
+            - { regexp: "^TIMELINE_CREATE=", line: "TIMELINE_CREATE='no'" }
+            - {
+                regexp: "^NUMBER_LIMIT=",
+                line: "NUMBER_LIMIT='{{ snapshot_limit }}'",
+              }
+            - {
+                regexp: "^NUMBER_LIMIT_IMPORTANT=",
+                line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'",
+              }
           notify: regenerate grub config
 
     - name: Create Jellyfin media root directory
@@ -403,7 +459,7 @@
         rule: allow
         name: "{{ item }}"
       loop: "{{ ufw_profiles }}"
-      notify: restart ufw
+      notify: reload ufw
 
     - name: Configure UFW rules for ports
       ufw:
@@ -411,11 +467,10 @@
         port: "{{ item.split('/')[0] }}"
         proto: "{{ item.split('/')[1] }}"
       loop: "{{ ufw_ports }}"
-      notify: restart ufw
+      notify: reload ufw
 
     - name: Enable UFW
-      ufw:
-        state: enabled
+      ufw: { state: enabled }
 
     - name: Mount secondary disk to /media
       block:
@@ -434,30 +489,50 @@
             fstype: "{{ secondary_disk_fs | default('ext4') }}"
             opts: "{{ secondary_disk_opts }}"
             state: mounted
-      when: secondary_disk_enabled
+      when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
 
-    - name: Copy SSL cert and key
+    - name: Ensure SSL cert/key exists
       block:
-        - name: Copy SSL certificate
-          copy:
-            src: "{{ ssl_cert_path }}/fullchain.pem"
-            dest: "/etc/ssl/private/{{ hostname }}.crt"
+        - name: Ensure SSL directory exists
+          file:
+            path: "{{ ssl_cert_dir }}"
+            state: directory
             owner: root
             group: root
-            mode: "0644"
-            remote_src: true
-          notify: restart nginx
+            mode: "0700"
 
-        - name: Copy SSL private key
+        - name: Copy custom SSL certificate/key if provided
           copy:
-            src: "{{ ssl_cert_path }}/privkey.pem"
-            dest: "/etc/ssl/private/{{ hostname }}.key"
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
             owner: root
             group: root
-            mode: "0600"
-            remote_src: true
-          notify: restart nginx
-      when: ssl_enabled
+            mode: "{{ item.mode }}"
+          loop:
+            - {
+                src: "{{ ssl_cert_src }}",
+                dest: "{{ ssl_cert_file }}",
+                mode: "0644",
+              }
+            - {
+                src: "{{ ssl_key_src }}",
+                dest: "{{ ssl_key_file }}",
+                mode: "0600",
+              }
+          when: item.src | length > 0
+
+        - name: Generate self-signed SSL certificate if missing
+          command: >
+            openssl req -x509 -nodes -newkey rsa:4096
+            -keyout {{ ssl_key_file }}
+            -out {{ ssl_cert_file }}
+            -days 3650
+            -subj "{{ ssl_subject }}/CN={{ ansible_hostname }}{{ ',' + ansible_fqdn if (ansible_fqdn is defined and ansible_fqdn != ansible_hostname) else '' }}"
+            -addext "subjectAltName=DNS:{{ ansible_hostname }}{{ ',DNS:' + ansible_fqdn if (ansible_fqdn is defined and ansible_fqdn != ansible_hostname) else '' }}"
+          args:
+            creates: "{{ ssl_cert_file }}"
+          when: ssl_cert_src | length == 0
+      notify: restart nginx
 
     - name: Create web root directory
       file:
@@ -467,6 +542,42 @@
         group: root
         mode: "0755"
       notify: restart nginx
+
+    - name: Deploy AMS dashboard and SVG assets
+      copy:
+        mode: "0644"
+        content: "{{ item.content }}"
+        dest: "{{ item.dest }}"
+      loop:
+        - dest: /var/www/html/index.html
+          content: |
+            <!doctype html><html><head><meta charset="utf-8"><title>ZEnITH</title>
+            <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+            <style>
+              body{background:#0c0d0e;color:#ddd;font-family:monospace;padding:40px;}
+              h1{color:#1793d1;font-weight:normal;display:flex;align-items:center;gap:10px;}
+              svg.logo{width:48px;height:48px;vertical-align:middle;}
+              a{display:block;margin:6px 0;color:#1793d1;text-decoration:none;}
+              a:hover{color:#fff;}
+            </style></head><body>
+            <h1><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+              <polygon points="100,10 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/>
+              <polygon points="100,30 170,170 30,170" fill="#1c1c1c"/>
+              <text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="24" font-weight="bold">ZEnITH</text>
+            </svg>ZEnITH - Arch Media Station</h1>
+            <a href="/web/" target="_blank">Jellyfin</a>
+            <a href="/torrent/" target="_blank">qBittorrent</a>
+            <a href="/admin/" target="_blank">Cockpit</a>
+            <a href="/stats/" target="_blank">Glances</a>
+            </body></html>
+
+        - dest: /var/www/html/favicon.svg
+          content: |
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+              <polygon points="100,30 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/>
+              <polygon points="100,50 170,170 30,170" fill="#1c1c1c"/>
+              <text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="48" font-weight="bold">Z</text>
+            </svg>
 
     - name: Deploy nginx configuration
       copy:
@@ -479,70 +590,68 @@
             upstream cockpit { server 127.0.0.1:9090; }
             upstream jellyfin { server 127.0.0.1:8096; }
             upstream qbittorrent { server 127.0.0.1:8080; }
+            upstream glances { server 127.0.0.1:61208; }
             include mime.types;
             default_type application/octet-stream;
             sendfile on;
             keepalive_timeout 65;
             server_tokens off;
             server {
-              listen 80{{ ' default_server' if not (ssl_cert_path | length > 0) else '' }};
+              listen 80 default_server;
               server_name {{ hostname }};
-          {%- if ssl_cert_path | length > 0 %}
-              listen 443 ssl http2;
-              ssl_certificate /etc/ssl/private/{{ hostname }}.crt;
-              ssl_certificate_key /etc/ssl/private/{{ hostname }}.key;
-          {%- endif %}
-              location = / { return 302 {{ 'https' if ssl_cert_path | length > 0 else 'http' }}://$host/web/; }
-              location / { 
-                proxy_pass http://jellyfin; 
-                proxy_set_header Host $host; 
-                proxy_set_header X-Real-IP $remote_addr; 
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-                proxy_set_header X-Forwarded-Proto $scheme; 
-                proxy_set_header X-Forwarded-Protocol $scheme; 
-                proxy_set_header X-Forwarded-Host $http_host; 
-                proxy_buffering off; 
+              return 301 https://$host$request_uri;
+            }
+            server {
+              listen 443 ssl http2 default_server;
+              server_name {{ hostname }};
+              ssl_certificate {{ ssl_cert_file }};
+              ssl_certificate_key {{ ssl_key_file }};
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_session_cache shared:SSL:10m;
+              ssl_session_timeout 10m;
+              ssl_prefer_server_ciphers on;
+              ssl_session_tickets off;
+              proxy_request_buffering off;
+              set $proxy_headers '';
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_set_header X-Forwarded-Protocol $scheme;
+              proxy_set_header X-Forwarded-Host $http_host;
+              # AMS dashboard
+              location /ams/ { alias /var/www/html/; index index.html; }
+              # Redirect to Jellyfin web UI
+              location = / { return 302 https://$host/web/; }
+              # Jellyfin main backend
+              location / { proxy_pass http://jellyfin; proxy_buffering off; }
+              # Jellyfin web interface
+              location = /web/ { proxy_pass http://jellyfin/web/index.html; }
+              # Jellyfin websocket
+              location /socket {
+                proxy_pass http://jellyfin;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
               }
-              location = /web/ { 
-                proxy_pass http://jellyfin/web/index.html; 
-                proxy_set_header Host $host; 
-                proxy_set_header X-Real-IP $remote_addr; 
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-                proxy_set_header X-Forwarded-Proto $scheme; 
-                proxy_set_header X-Forwarded-Protocol $scheme; 
-                proxy_set_header X-Forwarded-Host $http_host; 
-              }
-              location /socket { 
-                proxy_pass http://jellyfin; 
-                proxy_http_version 1.1; 
-                proxy_set_header Upgrade $http_upgrade; 
-                proxy_set_header Connection "upgrade"; 
-                proxy_set_header Host $host; 
-                proxy_set_header X-Real-IP $remote_addr; 
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-                proxy_set_header X-Forwarded-Proto $scheme; 
-                proxy_set_header X-Forwarded-Protocol $scheme; 
-                proxy_set_header X-Forwarded-Host $http_host; 
-              }
-              location /torrent/ { 
-                proxy_set_header Host $host; 
-                proxy_set_header X-Real-IP $remote_addr; 
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-                proxy_set_header X-Forwarded-Proto $scheme; 
-                proxy_set_header X-Forwarded-Protocol $scheme; 
-                proxy_set_header X-Forwarded-Host $http_host; 
-                proxy_pass http://qbittorrent/; 
-              }
+              # qBittorrent WebUI
+              location /torrent/ { proxy_pass http://qbittorrent/; }
+              # Cockpit admin panel
               location /admin/ {
-                proxy_ssl_verify off;
                 proxy_pass http://cockpit/admin/;
-                proxy_set_header Host $host;
-                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_ssl_verify off;
                 proxy_http_version 1.1;
                 proxy_buffering off;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
                 gzip off;
+              }
+              # Glances system stats
+              location /stats/ {
+                proxy_pass http://glances/;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
               }
             }
           }
@@ -553,6 +662,66 @@
       register: nginx_test
       changed_when: false
       failed_when: nginx_test.rc != 0
+
+    - name: Deploy AMS update system
+      block:
+        - name: Deploy ams-update script
+          copy:
+            dest: /usr/local/bin/ams-update
+            owner: root
+            group: root
+            mode: "0755"
+            content: |
+              #!/bin/bash
+              set -euo pipefail
+              ts() { date '+%Y-%m-%d %H:%M:%S'; }
+              LOG="/var/log/ams-update.log"
+              echo "[$(ts)] AMS update started" >> "$LOG"
+              command -v snapper >/dev/null 2>&1 && snapper -c root create --description "pre-update $(ts)" >> "$LOG" 2>&1 || true
+              pacman -Syu --noconfirm >> "$LOG" 2>&1 || true
+              pacman -Qdtq 2>/dev/null | xargs -r pacman -Rns --noconfirm >> "$LOG" 2>&1 || true
+              echo "[$(ts)] AMS update finished" >> "$LOG"
+
+        - name: Create AMS update systemd service
+          copy:
+            dest: /etc/systemd/system/ams-update.service
+            mode: "0644"
+            owner: root
+            group: root
+            content: |
+              [Unit]
+              Description=AMS Automatic Update Service
+              After=network.target
+
+              [Service]
+              Type=oneshot
+              ExecStart=/usr/local/bin/ams-update
+              StandardOutput=journal
+              StandardError=journal
+
+        - name: Create AMS update systemd timer
+          copy:
+            dest: /etc/systemd/system/ams-update.timer
+            mode: "0644"
+            owner: root
+            group: root
+            content: |
+              [Unit]
+              Description=Run AMS update daily
+
+              [Timer]
+              OnCalendar=daily
+              Persistent=true
+
+              [Install]
+              WantedBy=timers.target
+
+        - name: Reload systemd and enable timer if automatic updates enabled
+          systemd:
+            daemon_reload: true
+            name: ams-update.timer
+            state: "{{ 'started' if enable_automatic_updates | bool else 'stopped' }}"
+            enabled: "{{ enable_automatic_updates | bool }}"
 
     - name: Enable and start system services
       systemd:
@@ -573,32 +742,28 @@
       systemd:
         name: cockpit.socket
         state: restarted
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: restart nginx
       systemd:
         name: nginx
         state: restarted
-        enabled: true
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: restart qbittorrent
       systemd:
         name: qbittorrent-nox
         state: restarted
-        enabled: true
-        daemon_reload: yes
+        daemon_reload: true
 
-    - name: restart ufw
+    - name: reload ufw
       systemd:
         name: ufw
-        state: restarted
-        enabled: true
-        daemon_reload: yes
+        state: reloaded
+        daemon_reload: true
 
     - name: reload system services
       systemd:
         name: "{{ item }}"
-        state: started
-        enabled: true
+        state: restarted
       loop: "{{ system_services }}"
