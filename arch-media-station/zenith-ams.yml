@@ -128,6 +128,7 @@
       - bash-completion
       - byobu
       - exa
+      - fastfetch
       - fzf
       - ripgrep
       - starship
