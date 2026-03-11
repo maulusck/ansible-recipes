@@ -18,20 +18,23 @@
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     # -----------------------------
-    # Installation Variables
+    # System Configuration
     # -----------------------------
-    root_password: "testing" # root password for system
-    user_name: "mediauser" # non-root user
-    user_password: "testing" # non-root user password
     hostname: "media-station" # hostname for system
-    disk_device: "/dev/sda" # primary disk device
-    disk_encryption_type: "none" # allowed: 'luks' or 'none'
-    disk_encryption_password: "" # required if luks
-    bootloader: "grub" # allowed: 'grub', 'systemd-boot'
-    kernel: "linux-zen" # kernel package, e.g., 'linux', 'linux-zen', 'linux-lts'
     timezone: "UTC" # timezone, e.g., 'Europe/Berlin'
 
+    disk_device: "/dev/sda" # primary disk device
     root_partition_size: "25G" # root partition size
+    disk_encryption_type: "none" # allowed: 'luks' or 'none'
+    disk_encryption_password: "" # required if luks
+
+    bootloader: "grub" # allowed: 'grub', 'systemd-boot'
+    kernel: "linux-zen" # kernel package, e.g., 'linux', 'linux-zen', 'linux-lts'
+
+    root_password: "testing" # root password for system; leave empty to disable root login
+    user_name: "mediauser" # non-root user
+    user_password: "testing" # non-root user password
+
     snapshot_limit: 8 # snapper normal snapshot limit
     snapshot_important_limit: 4 # snapper important snapshot limit
 
@@ -41,28 +44,27 @@
     packages:
       # Core filesystem & snapshots
       - btrfs-progs
-      - snapper
       - grub-btrfs
+      - snapper
       # Media server & playback
+      - ffmpeg
+      - jellyfin-mpv-shim
       - jellyfin-server
       - jellyfin-web
-      - jellyfin-ffmpeg
-      - jellyfin-mpv-shim
-      - ffmpeg
       - mediainfo
       - mpv
       # Networking & remote access
-      - nginx
-      - openssh
-      - openvpn
       - nfs-utils
+      - nginx
+      - openvpn
+      - openssh
       - rclone
       - rsync
-      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
       - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}"
+      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
       # Security & firewall
-      - ufw
       - openssl
+      - ufw
       # System & monitoring
       - cockpit
       - glances
@@ -73,41 +75,40 @@
       - snap-pac
       - uvicorn
       # Monitoring tools (TUI-friendly)
-      - htop
       - bmon
       - btop
+      - htop
       - iotop
       # File management & utilities
-      - mc
-      - ncdu
-      - duf
       - bat
+      - duf
+      - mc
+      - nano
+      - ncdu
+      - vim
       # Shell & CLI Enhancements
-      - tmux
-      - byobu
       - bash-completion
-      - zsh-completions
-      - zsh
+      - byobu
+      - exa
       - fzf
       - ripgrep
-      - exa
-      - fd
       - starship
+      - tmux
       - yt-dlp
+      - zsh
+      - zsh-completions
       - zoxide
 
     # -----------------------------
     # Bare Metal Packages
-    # Only installed on physical machines (not VM)
-    # Useful for performance tuning, disk, temperature, network monitoring
     # -----------------------------
     bare_metal_packages:
-      - cpupower # CPU frequency/performance tuning
-      - smartmontools # disk health monitoring (S.M.A.R.T.)
-      - lm_sensors # CPU/GPU/system temperature monitoring
-      - hdparm # disk parameter tweaks
-      - nvme-cli # NVMe SSD monitoring
-      - ethtool # network interface diagnostics
+      - cpupower
+      - smartmontools
+      - lm_sensors
+      - hdparm
+      - nvme-cli
+      - ethtool
 
     # -----------------------------
     # Desktop / Graphics Profile
@@ -134,7 +135,7 @@
     # -----------------------------
     # Automatic Updates
     # -----------------------------
-    enable_automatic_updates: false # true to enable daily automatic updates
+    enable_automatic_updates: false
     update_log_file: "/var/log/ams-update.log"
 
     # -----------------------------
@@ -145,7 +146,7 @@
       - WWW
       - "WWW Secure"
     ufw_ports:
-      - 32400/tcp # Jellyfin
+      - 32400/tcp
 
     # -----------------------------
     # Optional Secondary Disk
@@ -157,7 +158,6 @@
     # -----------------------------
     # SSL Configuration
     # -----------------------------
-    # SSL directory
     ssl_cert_dir: "/etc/ssl/private"
     # Optional custom cert/key
     ssl_cert_src: "" # leave empty to
@@ -172,7 +172,7 @@
     # -----------------------------
     ntp_enabled: true
     parallel_downloads: 5
-    network_type: "nm_iwd" # allowed: 'nm', 'nm_iwd', 'manual'
+    network_type: "nm_iwd"
     manual_nics:
       - iface: "ens18"
         dhcp: true
@@ -189,13 +189,16 @@
     # -----------------------------
     # Archinstall Custom Commands
     # -----------------------------
-    archinstall_custom_commands: >-
-      {{ [
-        "sed -i 's/^#PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config",
-        "systemctl enable sshd ufw"
-      ] +
-      (["systemctl enable NetworkManager"] if network_type in ['nm','nm_iwd'] else []) +
-      (["systemctl enable iwd"] if network_type == 'nm_iwd' else []) }}
+    archinstall_custom_commands:
+      # SSH: allow root login only if root_password is set
+      - '{{ ''sed -i "s/^#PermitRootLogin .*/PermitRootLogin yes/" /etc/ssh/sshd_config''
+        if root_password | length > 0 else '''' }}'
+      # Enable essential services
+      - "systemctl enable sshd ufw"
+      # Enable NetworkManager if using nm or nm_iwd
+      - "{{ 'systemctl enable NetworkManager' if network_type in ['nm','nm_iwd'] else '' }}"
+      # Enable iwd if using nm_iwd combo
+      - "{{ 'systemctl enable iwd' if network_type == 'nm_iwd' else '' }}"
 
   # -------------------------------------------------------------------------
   # Pre-tasks
