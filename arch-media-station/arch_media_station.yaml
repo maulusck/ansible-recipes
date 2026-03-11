@@ -15,7 +15,7 @@
     ansible_user: "root" # default SSH user for installation
     ansible_port: 22 # SSH port
     ansible_password: "testing" # password for ansible_user
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     # -----------------------------
     # Installation Variables
@@ -58,8 +58,8 @@
       - nfs-utils
       - rclone
       - rsync
-      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}" # network manager optional
-      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}" # iwd optional for NM+IWD
+      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
+      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}"
       # Security & firewall
       - ufw
       - openssl
@@ -67,19 +67,34 @@
       - cockpit
       - glances
       - inotify-tools
+      - python-fastapi
       - python-jellyfin-apiclient
       - qbittorrent-nox
       - snap-pac
+      - uvicorn
       # Monitoring tools (TUI-friendly)
       - htop
       - bmon
       - btop
       - iotop
       # File management & utilities
-      - mc # single, best TUI file manager (Midnight Commander)
-      - ncdu # disk usage analyzer
-      - duf # disk free utility (modern)
-      - bat # cat replacement with syntax highlighting
+      - mc
+      - ncdu
+      - duf
+      - bat
+      # Shell & CLI Enhancements
+      - tmux
+      - byobu
+      - bash-completion
+      - zsh-completions
+      - zsh
+      - fzf
+      - ripgrep
+      - exa
+      - fd
+      - starship
+      - yt-dlp
+      - zoxide
 
     # -----------------------------
     # Bare Metal Packages
@@ -222,19 +237,12 @@
               {
                 "archinstall-language": "English",
                 "auth_config": {},
-                "bootloader_config": {
-                  "bootloader": "{{ bootloader | title }}",
-                  "removable": true,
-                  "uki": false
-                },
+                "bootloader_config": {"bootloader": "{{ bootloader | title }}", "removable": true, "uki": false},
                 "custom_commands": {{ archinstall_custom_commands | to_json }},
                 "disk_config": {
                   "config_type": "default_layout",
                   "encryption": "{{ disk_encryption_type }}",
-                  "btrfs_options": {
-                    "snapshot_config": null,
-                    "compress": "zstd"
-                  },
+                  "btrfs_options": {"snapshot_config": null, "compress": "zstd"},
                   "device_modifications": [
                     {
                       "device": "{{ disk_device }}",
@@ -242,22 +250,14 @@
                       "partitions": [
                         {
                           "dev_path": null,
-                          "flags": ["boot", "esp"],
+                          "flags": ["boot","esp"],
                           "fs_type": "fat32",
                           "mountpoint": "/boot",
                           "mount_options": [],
                           "btrfs": [],
                           "obj_id": "{{ lookup('pipe','uuidgen') }}",
-                          "start": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "MiB",
-                            "value": 1
-                          },
-                          "size": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "GiB",
-                            "value": 1
-                          },
+                          "start": {"sector_size": {"unit": "B","value": 512},"unit": "MiB","value": 1},
+                          "size": {"sector_size": {"unit": "B","value": 512},"unit": "GiB","value": 1},
                           "status": "create",
                           "type": "primary"
                         },
@@ -265,26 +265,17 @@
                           "dev_path": null,
                           "flags": [],
                           "fs_type": "btrfs",
-                          "mountpoint": "/",
-                          "mount_options": ["compress=zstd", "noatime"],
+                          "mountpoint": null,
+                          "mount_options": ["compress=zstd","noatime"],
                           "btrfs": [
-                            {"name": "@", "mountpoint": "/"},
-                            {"name": "@home", "mountpoint": "/home"},
-                            {"name": "@cache", "mountpoint": "/var/cache"},
-                            {"name": "@log", "mountpoint": "/var/log"},
-                            {"name": "@snapshots", "mountpoint": "/.snapshots"}
+                            {"name": "root","mountpoint": "/"},
+                            {"name": "home","mountpoint": "/home"},
+                            {"name": "cache","mountpoint": "/var/cache"},
+                            {"name": "log","mountpoint": "/var/log"}
                           ],
                           "obj_id": "{{ lookup('pipe','uuidgen') }}",
-                          "start": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "B",
-                            "value": 1074790400
-                          },
-                          "size": {
-                            "sector_size": {"unit": "B", "value": 512},
-                            "unit": "B",
-                            "value": {{ root_partition_size | human_to_bytes }}
-                          },
+                          "start": {"sector_size": {"unit": "B","value": 512},"unit": "B","value": 1074790400},
+                          "size": {"sector_size": {"unit": "B","value": 512},"unit": "B","value": {{ root_partition_size | human_to_bytes }}},
                           "status": "create",
                           "type": "primary"
                         }
@@ -294,37 +285,24 @@
                 },
                 "hostname": "{{ hostname }}",
                 "kernels": ["{{ kernel }}"],
-                "locale_config": {
-                  "kb_layout": "us",
-                  "sys_enc": "UTF-8",
-                  "sys_lang": "en_US.UTF-8"
-                },
-                "mirror_config": {
-                  "custom_repositories": [],
-                  "custom_servers": [],
-                  "mirror_regions": {},
-                  "optional_repositories": []
-                },
+                "locale_config": {"kb_layout": "us","sys_enc": "UTF-8","sys_lang": "en_US.UTF-8"},
+                "mirror_config": {"custom_repositories": [],"custom_servers": [],"mirror_regions": {},"optional_repositories": []},
                 "ntp": {{ ntp_enabled | lower }},
                 "packages": {{ packages | to_json }},
                 "parallel_downloads": {{ parallel_downloads }},
                 "profile_config": {
                   "gfx_driver": "{{ profile_gfx_driver }}",
                   "greeter": {{ profile_greeter | to_json }},
-                  "profile": {
-                    "custom_settings": {{ profile_custom_settings | to_json }},
-                    "details": {{ profile_details | to_json }},
-                    "main": "{{ profile_main }}"
-                  }
+                  "profile": {"custom_settings": {{ profile_custom_settings | to_json }},"details": {{ profile_details | to_json }},"main": "{{ profile_main }}"}
                 }
                 {%- if network_type in ["nm","nm_iwd"] %}
                 ,"network_config": {"type": "{{ network_type }}"}
                 {%- elif network_type == "manual" %}
-                ,"network_config": {"type": "manual", "nics": {{ manual_nics | to_json }}}
+                ,"network_config": {"type": "manual","nics": {{ manual_nics | to_json }}}
                 {%- endif %},
                 "script": null,
                 "services": [],
-                "swap": {"algorithm": "zstd", "enabled": true},
+                "swap": {"algorithm": "zstd","enabled": true},
                 "timezone": "{{ timezone }}",
                 "version": "3.0.15"
               }
@@ -339,13 +317,7 @@
                 "encryption_password": "{{ disk_encryption_password }}",
               {%- endif %}
                 "root_enc_password": "{{ root_password_hash }}",
-                "users": [
-                  {
-                    "username": "{{ user_name }}",
-                    "enc_password": "{{ user_password_hash }}",
-                    "sudo": true
-                  }
-                ]
+                "users": [{"username": "{{ user_name }}","enc_password": "{{ user_password_hash }}","sudo": true}]
               }
 
         - name: Show SSH command to follow Archinstall logs
@@ -357,7 +329,7 @@
 
         - name: Reboot system (ignore if SSH lost)
           reboot:
-            reboot_timeout: 10
+            reboot_timeout: 60
           ignore_unreachable: true
 
         - name: Ask for new IP if needed
@@ -367,10 +339,13 @@
 
         - name: Override Ansible host for the rest of the playbook
           set_fact:
-            ansible_host: "{{ new_ip_input.user_input | default(ansible_host | default(inventory_hostname)) }}"
+            ansible_host: "{{ new_ip_input.user_input | default(ansible_host | default(inventory_hostname), true) }}"
     # End of installation
 
     # Post-install media setup
+    - name: Re-gather facts after reboot and possible IP change
+      setup:
+
     - name: Make sure packages are installed
       pacman:
         name: "{{ packages }}"
@@ -459,7 +434,7 @@
         rule: allow
         name: "{{ item }}"
       loop: "{{ ufw_profiles }}"
-      notify: reload ufw
+      notify: restart ufw
 
     - name: Configure UFW rules for ports
       ufw:
@@ -467,7 +442,7 @@
         port: "{{ item.split('/')[0] }}"
         proto: "{{ item.split('/')[1] }}"
       loop: "{{ ufw_ports }}"
-      notify: reload ufw
+      notify: restart ufw
 
     - name: Enable UFW
       ufw: { state: enabled }
@@ -521,17 +496,17 @@
               }
           when: item.src | length > 0
 
-        - name: Generate self-signed SSL certificate if missing
-          command: >
-            openssl req -x509 -nodes -newkey rsa:4096
-            -keyout {{ ssl_key_file }}
-            -out {{ ssl_cert_file }}
-            -days 3650
-            -subj "{{ ssl_subject }}/CN={{ ansible_hostname }}{{ ',' + ansible_fqdn if (ansible_fqdn is defined and ansible_fqdn != ansible_hostname) else '' }}"
-            -addext "subjectAltName=DNS:{{ ansible_hostname }}{{ ',DNS:' + ansible_fqdn if (ansible_fqdn is defined and ansible_fqdn != ansible_hostname) else '' }}"
-          args:
-            creates: "{{ ssl_cert_file }}"
-          when: ssl_cert_src | length == 0
+    - name: Generate self-signed SSL certificate if missing
+      command: >
+        openssl req -x509 -nodes -newkey rsa:4096
+        -keyout {{ ssl_key_file }}
+        -out {{ ssl_cert_file }}
+        -days 3650
+        -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{{ ',' + ansible_facts.fqdn if (ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname) else '' }}"
+        -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{{ ',DNS:' + ansible_facts.fqdn if (ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname) else '' }}"
+      args:
+        creates: "{{ ssl_cert_file }}"
+      when: ssl_cert_src | length == 0
       notify: restart nginx
 
     - name: Create web root directory
@@ -620,7 +595,8 @@
               proxy_set_header X-Forwarded-Protocol $scheme;
               proxy_set_header X-Forwarded-Host $http_host;
               # AMS dashboard
-              location /ams/ { alias /var/www/html/; index index.html; }
+              location = /favicon.svg { alias /var/www/html/favicon.svg; }
+              location /ams { alias /var/www/html/; index index.html; }
               # Redirect to Jellyfin web UI
               location = / { return 302 https://$host/web/; }
               # Jellyfin main backend
@@ -756,10 +732,10 @@
         state: restarted
         daemon_reload: true
 
-    - name: reload ufw
+    - name: restart ufw
       systemd:
         name: ufw
-        state: reloaded
+        state: restarted
         daemon_reload: true
 
     - name: reload system services
