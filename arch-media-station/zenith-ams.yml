@@ -821,113 +821,114 @@
             PROMPT='%{%F{green}%}[%{%F{white}%}%*%{%F{green}%}]%{%f%} %{%F{white}%}%n%{%f%}@%{%F{cyan}%}%m%{%f%} %{%F{black}%}%~%{%f%} $(if [[ $? -eq 0 ]]; then echo "%{%F{green}%}[✔]%{%f%}"; else echo "%{%F{red}%}[✘]%{%f%}"; fi) \$ '
             {% endraw %}
 
-    - name: Install Xorg, Openbox, and GUI applications (if enabled)
-      pacman:
-        name: "{{ graphical_packages + graphical_drivers }}"
-        state: present
-        update_cache: yes
-        extra_args: --needed
-      when: enable_graphical
+    - name: Configure graphical environment
+      block:
+        - name: Install Xorg, Openbox, and GUI applications
+          pacman:
+            name: "{{ graphical_packages + graphical_drivers }}"
+            state: present
+            update_cache: yes
+            extra_args: --needed
 
-    - name: Ensure /opt/jellyfin-desktop exists
-      file:
-        path: /opt/jellyfin-desktop
-        state: directory
-        mode: "0755"
-      when: enable_graphical
+        - name: Add user to graphical groups
+          user:
+            name: "{{ user_name }}"
+            groups:
+              - video
+              - input
+              - audio
+              - render
+              - storage
+              - optical
+              - lp
+            append: true
 
-    - name: Download and extract Jellyfin Desktop AppImage
-      unarchive:
-        src: https://nightly.link/jellyfin/jellyfin-desktop/workflows/build-appimage/master/linux-appimage-x86_64.zip
-        dest: /opt/jellyfin-desktop/
-        remote_src: yes
-        creates: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
-      when: enable_graphical
+        - name: Ensure /opt/jellyfin-desktop exists
+          file:
+            path: /opt/jellyfin-desktop
+            state: directory
+            mode: "0755"
 
-    - name: Ensure Jellyfin Desktop AppImage is executable
-      file:
-        path: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
-        mode: "0755"
-      when: enable_graphical
+        - name: Download and extract Jellyfin Desktop AppImage
+          unarchive:
+            src: https://nightly.link/jellyfin/jellyfin-desktop/workflows/build-appimage/master/linux-appimage-x86_64.zip
+            dest: /opt/jellyfin-desktop/
+            remote_src: yes
+            creates: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
 
-    - name: Create .xinitrc for {{ user_name }}
-      copy:
-        dest: "/home/{{ user_name }}/.xinitrc"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0755"
-        content: |
-          xset -dpms
-          xset s off
-          unclutter &
+        - name: Ensure Jellyfin Desktop AppImage is executable
+          file:
+            path: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
+            mode: "0755"
 
-          openbox &
+        - name: Create .xinitrc for {{ user_name }}
+          copy:
+            dest: "/home/{{ user_name }}/.xinitrc"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+            mode: "0755"
+            content: |
+              xset -dpms
+              xset s off
+              unclutter &
+              openbox &
+              {% if jellyfin_autostart %}
+              /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen &
+              {% endif %}
 
-          {% if jellyfin_autostart %}
-          /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen &
-          {% endif %}
-      when: enable_graphical
+        - name: Add startx on tty1 login to .bash_profile for {{ user_name }}
+          blockinfile:
+            dest: "/home/{{ user_name }}/.bash_profile"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+            mode: "0644"
+            block: |
+              if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
+                  startx
+              fi
 
-    - name: Add startx on tty1 login to .bash_profile for {{ user_name }}
-      blockinfile:
-        dest: "/home/{{ user_name }}/.bash_profile"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0644"
-        block: |
-          if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
-              startx
-          fi
-      when: enable_graphical
+        - name: Create Openbox system config directory
+          file:
+            path: /etc/xdg/openbox
+            state: directory
 
-    - name: Create Openbox system config directory (if not exists)
-      file:
-        path: /etc/xdg/openbox
-        state: directory
-      when: enable_graphical
-
-    - name: Configure Openbox keybindings and window rules
-      copy:
-        dest: /etc/xdg/openbox/rc.xml
-        mode: "0644"
-        content: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <openbox_config>
-            <desktops>
-              <number>1</number>
-            </desktops>
-            <keyboard>
-              <!-- Launch Jellyfin Desktop -->
-              <keybind key="W-j">
-                <action name="Execute">
-                  <command>/opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen</command>
-                </action>
-              </keybind>
-              <!-- Launch Firefox -->
-              <keybind key="W-f">
-                <action name="Execute">
-                  <command>firefox</command>
-                </action>
-              </keybind>
-              <!-- Launch Double Commander -->
-              <keybind key="W-d">
-                <action name="Execute">
-                  <command>doublecmd</command>
-                </action>
-              </keybind>
-              <!-- Close focused window -->
-              <keybind key="W-q">
-                <action name="Close"/>
-              </keybind>
-            </keyboard>
-            <applications>
-              <!-- Remove decorations and maximize Jellyfin -->
-              <application name="JellyfinDesktop-x86_64.AppImage">
-                <decor>no</decor>
-                <maximized>yes</maximized>
-              </application>
-            </applications>
-          </openbox_config>
+        - name: Configure Openbox keybindings and window rules
+          copy:
+            dest: /etc/xdg/openbox/rc.xml
+            mode: "0644"
+            content: |
+              <?xml version="1.0" encoding="UTF-8"?>
+              <openbox_config>
+                <desktops>
+                  <number>1</number>
+                </desktops>
+                <keyboard>
+                  <keybind key="W-j">
+                    <action name="Execute">
+                      <command>/opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen</command>
+                    </action>
+                  </keybind>
+                  <keybind key="W-f">
+                    <action name="Execute">
+                      <command>firefox</command>
+                    </action>
+                  </keybind>
+                  <keybind key="W-d">
+                    <action name="Execute">
+                      <command>doublecmd</command>
+                    </action>
+                  </keybind>
+                  <keybind key="W-q">
+                    <action name="Close"/>
+                  </keybind>
+                </keyboard>
+                <applications>
+                  <application name="JellyfinDesktop-x86_64.AppImage">
+                    <decor>no</decor>
+                    <maximized>yes</maximized>
+                  </application>
+                </applications>
+              </openbox_config>
       when: enable_graphical
 
     # -----------------------------
