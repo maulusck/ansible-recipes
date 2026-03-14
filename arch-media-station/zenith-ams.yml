@@ -118,11 +118,14 @@
       - htop
       - iotop
       # File management & utilities
+      - 7zip
       - bat
       - duf
       - mc
       - nano
       - ncdu
+      - unrar
+      - unzip
       - vim
       # Shell & CLI Enhancements
       - bash-completion
@@ -151,14 +154,39 @@
     # -----------------------------
     # GUI Session Packages
     # -----------------------------
+    graphical_drivers:
+      # Core Xorg library
+      - libxxf86vm
+      # Input drivers
+      - xf86-input-elographics # Elographics touchscreen hardware
+      - xf86-input-evdev # Legacy generic input driver
+      - xf86-input-libinput # Modern default input stack (recommended)
+      - xf86-input-synaptics # Older touchpad driver (libinput usually replaces this)
+      - xf86-input-vmmouse # VMware virtual machine mouse driver
+      - xf86-input-void # Dummy input driver (rarely needed)
+      - xf86-input-wacom # Wacom tablet support
+      # Video drivers
+      - xf86-video-amdgpu # Modern AMD GPUs
+      - xf86-video-ati # Older Radeon GPUs
+      - xf86-video-dummy # Virtual display / headless X
+      - xf86-video-fbdev # Generic framebuffer fallback
+      - xf86-video-intel # Intel integrated graphics
+      - xf86-video-nouveau # Open-source NVIDIA driver
+      - xf86-video-qxl # SPICE/QEMU virtual GPU
+      - xf86-video-sisusb # SiS USB display adapters (very rare)
+      - xf86-video-vesa # Universal fallback driver
+      - xf86-video-voodoo # Legacy 3dfx Voodoo cards
+
     graphical_packages:
       - xorg-server
       - xorg-xinit
       - xorg-xrandr
+      - xorg-xset
       - openbox
       - firefox
-      - doublecmd-qt
+      - doublecmd-qt6
       - unclutter
+      - "{{ graphical_drivers }}"
 
     # -----------------------------
     # Desktop / Graphics Profile
@@ -172,8 +200,8 @@
     # -----------------------------
     # Optional Features
     # -----------------------------
-    enable_autologin: false # Set to true to enable console autologin on tty1
-    enable_graphical: false # Set to true to install Xorg/Openbox GUI
+    enable_autologin: true # Set to true to enable console autologin on tty1
+    enable_graphical: true # Set to true to install Xorg/Openbox GUI
     jellyfin_autostart: false # Set to true to autostart Jellyfin Desktop on X session
 
     # -----------------------------
@@ -437,9 +465,9 @@
               line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
               notify: regenerate grub config
 
-    - name: Mount secondary disk to /media
+    - name: Configure media root and optional secondary disk
       block:
-        - name: Ensure /media exists
+        - name: Ensure /media exists with SGID bit
           file:
             path: /media
             state: directory
@@ -447,55 +475,18 @@
             group: jellyfin
             mode: "2775"
 
-        - name: Add secondary disk to /etc/fstab
+        - name: Mount secondary disk at /media (if specified)
           mount:
             path: /media
             src: "UUID={{ secondary_disk_uuid }}"
-            fstype: "{{ secondary_disk_fs | default('ext4') }}"
+            fstype: "{{ secondary_disk_fs }}"
             opts: "{{ secondary_disk_opts }}"
             state: mounted
-      when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
+          when: secondary_disk_uuid | length > 0
 
-    - name: Setup Jellyfin media root with correct permissions and umask
-      block:
-        - name: Ensure /media exists with SGID
-          file:
-            path: /media
-            state: directory
-            owner: "{{ user_name }}"
-            group: jellyfin
-            mode: "2775"
-
-        - name: Fix directory permissions recursively
-          file:
-            path: /media
-            state: directory
-            recurse: yes
-            group: jellyfin
-            mode: "2775"
-
-        - name: Find media files
-          find:
-            paths: /media
-            file_type: file
-          register: media_files
-
-        - name: Fix file permissions
-          file:
-            path: "{{ item.path }}"
-            group: jellyfin
-            mode: "0664"
-          loop: "{{ media_files.files }}"
-
-        - name: Set umask for collaborative writes
-          copy:
-            dest: /etc/profile.d/media-umask.sh
-            owner: root
-            group: root
-            mode: "0644"
-            content: |
-              #!/bin/sh
-              umask 002
+        - name: Set default ACL so new files inherit jellyfin group RWX【32†L176-L183】
+          command: setfacl -d -m g:jellyfin:rwx /media
+      when: secondary_disk_uuid | length > 0 or true
 
     - name: Set CPU governor to performance
       lineinfile:
