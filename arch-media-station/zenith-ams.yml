@@ -186,7 +186,6 @@
       - firefox
       - doublecmd-qt6
       - unclutter
-      - "{{ graphical_drivers }}"
 
     # -----------------------------
     # Desktop / Graphics Profile
@@ -824,7 +823,7 @@
 
     - name: Install Xorg, Openbox, and GUI applications (if enabled)
       pacman:
-        name: "{{ graphical_packages }}"
+        name: "{{ graphical_packages + graphical_drivers }}"
         state: present
         update_cache: yes
         extra_args: --needed
