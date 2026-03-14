@@ -21,7 +21,7 @@
 #   1. Set your desired variables in the playbook (hostname, users, disk,
 #      encryption, packages, network type, etc.)
 #   2. Run the playbook with the installation flag:
-#        ansible-playbook zenith-ams.yml -e execute_system_installation=true
+#        ansible-playbook zenith-ams.yml -e execute_system_installation=1
 #      This will install the base system, configure disks, users, network,
 #      and essential services, then reboot if needed.
 #   3. Monitor logs during installation (optional):
@@ -131,7 +131,6 @@
       - fastfetch
       - fzf
       - ripgrep
-      - starship
       - tmux
       - yt-dlp
       - zsh
@@ -150,6 +149,18 @@
       - ethtool
 
     # -----------------------------
+    # GUI Session Packages
+    # -----------------------------
+    graphical_packages:
+      - xorg-server
+      - xorg-xinit
+      - xorg-xrandr
+      - openbox
+      - firefox
+      - doublecmd-qt
+      - unclutter
+
+    # -----------------------------
     # Desktop / Graphics Profile
     # -----------------------------
     profile_gfx_driver: "All open-source" # allowed: 'Intel', 'AMD', 'Nvidia (proprietary)', etc.
@@ -159,6 +170,13 @@
     profile_details: [] # extra profile details if needed
 
     # -----------------------------
+    # Optional Features
+    # -----------------------------
+    enable_autologin: false # Set to true to enable console autologin on tty1
+    enable_graphical: false # Set to true to install Xorg/Openbox GUI
+    jellyfin_autostart: false # Set to true to autostart Jellyfin Desktop on X session
+
+    # -----------------------------
     # System Services
     # -----------------------------
     system_services:
@@ -166,6 +184,7 @@
       - glances-web
       - grub-btrfsd
       - jellyfin
+      - nginx
       - qbittorrent-nox
       - ufw
     bare_metal_services:
@@ -264,12 +283,12 @@
         seconds: 3
         prompt: |
           [!] execute_system_installation flag not set. 
-          Run with '-e execute_system_installation=true' to run the installation.
+          Run with '-e execute_system_installation=1' to run the installation.
           Continuing...
-      when: execute_system_installation is not defined
+      when: not execute_system_installation | bool
 
     - name: Run system installation
-      when: execute_system_installation is defined
+      when: execute_system_installation | bool
       block:
         - name: Copy Archinstall config.json (Garuda-style)
           copy:
@@ -364,7 +383,7 @@
 
         - name: Show SSH command to follow Archinstall logs
           debug:
-            msg: "Run: ssh {{ ansible_user }}@{{ inventory_hostname }} 'tail -f /var/log/archinstall/*.txt /var/log/archinstall/*.log'"
+            msg: "Run: ssh {{ ansible_ssh_common_args }} {{ ansible_user }}@{{ inventory_hostname }} 'tail -f /var/log/archinstall/*.txt /var/log/archinstall/*.log'"
 
         - name: Install Arch Linux base system (synchronous)
           command: archinstall --config /tmp/config.json --creds /tmp/creds.json --silent
@@ -410,32 +429,73 @@
             regexp: "{{ item.regexp }}"
             line: "{{ item.line }}"
           loop:
-            - { regexp: "^TIMELINE_CREATE=", line: "TIMELINE_CREATE='no'" }
-            - {
-                regexp: "^NUMBER_LIMIT=",
-                line: "NUMBER_LIMIT='{{ snapshot_limit }}'",
-              }
-            - {
-                regexp: "^NUMBER_LIMIT_IMPORTANT=",
-                line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'",
-              }
-          notify: regenerate grub config
+            - regexp: "^TIMELINE_CREATE="
+              line: "TIMELINE_CREATE='no'"
+            - regexp: "^NUMBER_LIMIT="
+              line: "NUMBER_LIMIT='{{ snapshot_limit }}'"
+            - regexp: "^NUMBER_LIMIT_IMPORTANT="
+              line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
+              notify: regenerate grub config
 
-    - name: Create Jellyfin media root directory
-      file:
-        path: /media
-        state: directory
-        owner: "{{ user_name }}"
-        group: jellyfin
-        mode: "2775"
+    - name: Mount secondary disk to /media
+      block:
+        - name: Ensure /media exists
+          file:
+            path: /media
+            state: directory
+            owner: "{{ user_name }}"
+            group: jellyfin
+            mode: "2775"
 
-    - name: Set Jellyfin group recursive on media
-      file:
-        path: /media
-        state: directory
-        recurse: true
-        group: jellyfin
-        mode: "2775"
+        - name: Add secondary disk to /etc/fstab
+          mount:
+            path: /media
+            src: "UUID={{ secondary_disk_uuid }}"
+            fstype: "{{ secondary_disk_fs | default('ext4') }}"
+            opts: "{{ secondary_disk_opts }}"
+            state: mounted
+      when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
+
+    - name: Setup Jellyfin media root with correct permissions and umask
+      block:
+        - name: Ensure /media exists with SGID
+          file:
+            path: /media
+            state: directory
+            owner: "{{ user_name }}"
+            group: jellyfin
+            mode: "2775"
+
+        - name: Fix directory permissions recursively
+          file:
+            path: /media
+            state: directory
+            recurse: yes
+            group: jellyfin
+            mode: "2775"
+
+        - name: Find media files
+          find:
+            paths: /media
+            file_type: file
+          register: media_files
+
+        - name: Fix file permissions
+          file:
+            path: "{{ item.path }}"
+            group: jellyfin
+            mode: "0664"
+          loop: "{{ media_files.files }}"
+
+        - name: Set umask for collaborative writes
+          copy:
+            dest: /etc/profile.d/media-umask.sh
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              #!/bin/sh
+              umask 002
 
     - name: Set CPU governor to performance
       lineinfile:
@@ -489,25 +549,6 @@
     - name: Enable UFW
       ufw: { state: enabled }
 
-    - name: Mount secondary disk to /media
-      block:
-        - name: Ensure /media exists
-          file:
-            path: /media
-            state: directory
-            owner: "{{ user_name }}"
-            group: jellyfin
-            mode: "2775"
-
-        - name: Add secondary disk to /etc/fstab
-          mount:
-            path: /media
-            src: "UUID={{ secondary_disk_uuid }}"
-            fstype: "{{ secondary_disk_fs | default('ext4') }}"
-            opts: "{{ secondary_disk_opts }}"
-            state: mounted
-      when: secondary_disk_uuid is defined and secondary_disk_uuid | length > 0
-
     - name: Ensure SSL cert/key exists
       block:
         - name: Ensure SSL directory exists
@@ -537,11 +578,11 @@
     - name: Generate self-signed SSL certificate if missing
       command: >
         openssl req -x509 -nodes -newkey rsa:4096
-        -keyout {{ ssl_key_file }}
-        -out {{ ssl_cert_file }}
+        -keyout "{{ ssl_key_file }}"
+        -out "{{ ssl_cert_file }}"
         -days 3650
-        -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{{ ',' + ansible_facts.fqdn if (ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname) else '' }}"
-        -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{{ ',DNS:' + ansible_facts.fqdn if (ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname) else '' }}"
+        -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
+        -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
       args:
         creates: "{{ ssl_cert_file }}"
       when: ssl_cert_src | length == 0
@@ -564,22 +605,18 @@
       loop:
         - dest: /var/www/html/index.html
           content: |
-            <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ZEnITH</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><style>
+            <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ZEnITH - {{ hostname }}</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><style>
             body{background:#0c0d0e;color:#ddd;font-family:monospace;padding:40px;text-align:left;font-size:18px;}
             h1{color:#1793d1;font-weight:normal;display:flex;align-items:center;gap:10px;font-size:28px;}
             svg.logo{width:48px;height:48px;vertical-align:middle;}
+            .subtitle{font-size:14px;color:#888;margin-left:58px;}
             a{display:block;margin:6px 0;color:#1793d1;text-decoration:none;border:2px solid #1793d1;padding:6px 12px;border-radius:6px;transition:0.2s;font-size:18px;}
             a:hover{color:#fff;border-color:#fff;}
-            a.logo-link{display:inline-block;margin:0;padding:0;border:none;} /* SVG link style */
+            a.logo-link{display:inline-block;margin:0;padding:0;border:none;}
             a.logo-link:hover{color:inherit;border:none;}
-            @media(max-width:600px){
-              body{text-align:center;padding:20px;font-size:22px;}
-              h1{flex-direction:column;gap:8px;font-size:32px;}
-              svg.logo{width:64px;height:64px;margin:0 auto;}
-              a{margin:10px 0;padding:10px 16px;font-size:22px;}
-            }
+            @media(max-width:600px){body{text-align:center;padding:20px;font-size:22px;}h1{flex-direction:column;gap:8px;font-size:32px;}svg.logo{width:64px;height:64px;margin:0 auto;}a{margin:10px 0;padding:10px 16px;font-size:22px;}.subtitle{margin-left:0;}}
             </style></head><body>
-            <h1><a href="https://goldrake.bot.nu/c/maulusck/ansible-recipes" class="logo-link" target="_blank"><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><polygon points="100,10 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/><polygon points="100,30 170,170 30,170" fill="#1c1c1c"/><text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="24" font-weight="bold">ZEnITH</text></svg></a>ZEnITH - Arch Media Station</h1>
+            <h1><a href="https://goldrake.bot.nu/c/maulusck/ansible-recipes" class="logo-link" target="_blank"><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><polygon points="100,10 190,180 10,180" fill="#1793d1" stroke="#fff" stroke-width="3"/><polygon points="100,30 170,170 30,170" fill="#1c1c1c"/><text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="24" font-weight="bold">ZEnITH</text></svg></a>ZEnITH - Arch Media Station<span class="subtitle">Running on {{ hostname }}</span></h1>
             <a href="/web/" target="_blank">Jellyfin</a><a href="/torrent/" target="_blank">qBittorrent</a><a href="/admin/" target="_blank">Cockpit</a><a href="/stats/" target="_blank">Glances</a>
             </body></html>
         - dest: /var/www/html/favicon.svg
@@ -613,7 +650,7 @@
               return 301 https://$host$request_uri;
             }
             server {
-              listen 443 ssl http2 default_server;
+              listen 443 ssl default_server;
               server_name {{ hostname }};
               ssl_certificate {{ ssl_cert_file }};
               ssl_certificate_key {{ ssl_key_file }};
@@ -684,15 +721,16 @@
             group: root
             mode: "0755"
             content: |
-              #!/bin/bash
-              set -euo pipefail
-              ts() { date '+%Y-%m-%d %H:%M:%S'; }
-              LOG="/var/log/ams-update.log"
-              echo "[$(ts)] AMS update started" >> "$LOG"
-              command -v snapper >/dev/null 2>&1 && snapper -c root create --description "pre-update $(ts)" >> "$LOG" 2>&1 || true
-              pacman -Syu --noconfirm >> "$LOG" 2>&1 || true
-              pacman -Qdtq 2>/dev/null | xargs -r pacman -Rns --noconfirm >> "$LOG" 2>&1 || true
-              echo "[$(ts)] AMS update finished" >> "$LOG"
+              #!/bin/sh
+              set -eu
+              LOG={{ update_log_file }}
+
+              {
+              echo "[$(date '+%F %T')] AMS update started"
+              pacman -Syu --noconfirm || true
+              pacman -Qdtq 2>/dev/null | xargs pacman -Rns --noconfirm || true
+              echo "[$(date '+%F %T')] AMS update finished"
+              } 2>&1 | tee -a "$LOG"
 
         - name: Create AMS update systemd service
           copy:
@@ -734,6 +772,202 @@
             name: ams-update.timer
             state: "{{ 'started' if enable_automatic_updates | bool else 'stopped' }}"
             enabled: "{{ enable_automatic_updates | bool }}"
+
+    - name: Deploy minimal RCs and default user-editable aliases
+      copy:
+        dest: "{{ item.dest }}"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+        force: "{{ item.force | default(true) }}"
+      loop:
+        - dest: "/home/{{ user_name }}/.bash_aliases"
+          mode: "0644"
+          force: false
+          content: |
+            alias ll='ls -alF'
+            alias la='ls -A'
+            alias l='ls -CF'
+            alias c='clear'
+            alias h='history'
+            alias gs='git status'
+            alias gc='git commit'
+            alias gp='git push'
+            alias aliases="${EDITOR:-nano} $HOME/.bash_aliases"
+        - dest: "/home/{{ user_name }}/.bashrc"
+          mode: "0644"
+          content: |
+            [[ $- != *i* ]] && return
+            HISTSIZE=1000
+            HISTFILESIZE=2000
+            HISTCONTROL=ignoreboth:erasedups
+            shopt -s histappend checkwinsize
+            [ -f "$HOME/.bash_aliases" ] && . "$HOME/.bash_aliases"
+            export PS1='\[\033[1;32m\][\[\033[1;37m\]\t\[\033[1;32m\]]\[\033[0m\] \[\033[1;37m\]\u\[\033[0m\]@\[\033[1;36m\]\H\[\033[0m\] \[\033[1;90m\]\w\[\033[0m\] \[$(if [ $? -eq 0 ]; then echo "\033[1;32m[✔]\033[0m"; else echo "\033[1;31m[✘]\033[0m"; fi)\] \$ '
+        - dest: "/home/{{ user_name }}/.zsh_aliases"
+          mode: "0644"
+          force: false
+          content: |
+            alias ll='ls -alF'
+            alias la='ls -A'
+            alias l='ls -CF'
+            alias c='clear'
+            alias h='history'
+            alias gs='git status'
+            alias gc='git commit'
+            alias gp='git push'
+            alias aliases="${EDITOR:-nano} $HOME/.zsh_aliases"
+        - dest: "/home/{{ user_name }}/.zshrc"
+          mode: "0644"
+          content: |-
+            {% raw %}
+            [[ $- != *i* ]] && return
+            autoload -U colors && colors
+            HISTSIZE=1000
+            SAVEHIST=2000
+            setopt hist_ignore_all_dups share_history auto_cd auto_pushd correct notify prompt_subst
+            [ -f "$HOME/.zsh_aliases" ] && . "$HOME/.zsh_aliases"
+            PROMPT='%{%F{green}%}[%{%F{white}%}%*%{%F{green}%}]%{%f%} %{%F{white}%}%n%{%f%}@%{%F{cyan}%}%m%{%f%} %{%F{black}%}%~%{%f%} $(if [[ $? -eq 0 ]]; then echo "%{%F{green}%}[✔]%{%f%}"; else echo "%{%F{red}%}[✘]%{%f%}"; fi) \$ '
+            {% endraw %}
+
+    - name: Install Xorg, Openbox, and GUI applications (if enabled)
+      pacman:
+        name: "{{ graphical_packages }}"
+        state: present
+        update_cache: yes
+        extra_args: --needed
+      when: enable_graphical
+
+    - name: Ensure /opt/jellyfin-desktop exists
+      file:
+        path: /opt/jellyfin-desktop
+        state: directory
+        mode: "0755"
+      when: enable_graphical
+
+    - name: Download and extract Jellyfin Desktop AppImage
+      unarchive:
+        src: https://nightly.link/jellyfin/jellyfin-desktop/workflows/build-appimage/master/linux-appimage-x86_64.zip
+        dest: /opt/jellyfin-desktop/
+        remote_src: yes
+        creates: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
+      when: enable_graphical
+
+    - name: Ensure Jellyfin Desktop AppImage is executable
+      file:
+        path: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
+        mode: "0755"
+      when: enable_graphical
+
+    - name: Create .xinitrc for {{ user_name }}
+      copy:
+        dest: "/home/{{ user_name }}/.xinitrc"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+        content: |
+          xset -dpms
+          xset s off
+          unclutter &
+
+          openbox &
+
+          {% if jellyfin_autostart %}
+          /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen &
+          {% endif %}
+      when: enable_graphical
+
+    - name: Add startx on tty1 login to .bash_profile for {{ user_name }}
+      blockinfile:
+        dest: "/home/{{ user_name }}/.bash_profile"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+        block: |
+          if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
+              startx
+          fi
+      when: enable_graphical
+
+    - name: Create Openbox system config directory (if not exists)
+      file:
+        path: /etc/xdg/openbox
+        state: directory
+      when: enable_graphical
+
+    - name: Configure Openbox keybindings and window rules
+      copy:
+        dest: /etc/xdg/openbox/rc.xml
+        mode: "0644"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <openbox_config>
+            <desktops>
+              <number>1</number>
+            </desktops>
+            <keyboard>
+              <!-- Launch Jellyfin Desktop -->
+              <keybind key="W-j">
+                <action name="Execute">
+                  <command>/opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen</command>
+                </action>
+              </keybind>
+              <!-- Launch Firefox -->
+              <keybind key="W-f">
+                <action name="Execute">
+                  <command>firefox</command>
+                </action>
+              </keybind>
+              <!-- Launch Double Commander -->
+              <keybind key="W-d">
+                <action name="Execute">
+                  <command>doublecmd</command>
+                </action>
+              </keybind>
+              <!-- Close focused window -->
+              <keybind key="W-q">
+                <action name="Close"/>
+              </keybind>
+            </keyboard>
+            <applications>
+              <!-- Remove decorations and maximize Jellyfin -->
+              <application name="JellyfinDesktop-x86_64.AppImage">
+                <decor>no</decor>
+                <maximized>yes</maximized>
+              </application>
+            </applications>
+          </openbox_config>
+      when: enable_graphical
+
+    # -----------------------------
+    # New Task: Console Autologin (Optional)
+    # -----------------------------
+    - name: Configure console autologin on tty1
+      block:
+        - name: Create systemd override directory for getty@tty1
+          file:
+            path: /etc/systemd/system/getty@tty1.service.d
+            state: directory
+
+        - name: Setup autologin override for getty@tty1
+          copy:
+            dest: /etc/systemd/system/getty@tty1.service.d/autologin.conf
+            mode: "0644"
+            content: |
+              [Service]
+              ExecStart=
+              ExecStart=-/usr/bin/agetty --autologin {{ user_name }} --noclear %I $TERM
+
+        - name: Enable getty@tty1 service
+          systemd:
+            name: getty@tty1
+            enabled: true
+
+        - name: Reload systemd daemon for autologin
+          command: systemctl daemon-reload
+          changed_when: false
+      when: enable_autologin
 
     - name: Enable and start system services
       systemd:
