@@ -1011,6 +1011,12 @@
     - name: Flush handlers
       meta: flush_handlers
 
+    - name: Reboot system if needed
+      reboot:
+        reboot_timeout: 60
+      ignore_unreachable: true
+      when: execute_system_installation | bool
+
   handlers:
     - name: regenerate grub config
       command: grub-mkconfig -o /boot/grub/grub.cfg
