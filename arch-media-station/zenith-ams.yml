@@ -552,7 +552,7 @@
     - name: Enable UFW
       ufw: { state: enabled }
 
-    - name: Ensure SSL cert/key exists
+    - name: Ensure SSL certificate/key exist and are trusted
       block:
         - name: Ensure SSL directory exists
           file:
@@ -562,34 +562,45 @@
             group: root
             mode: "0700"
 
-    - name: Copy custom SSL certificate/key if provided
-      copy:
-        src: "{{ item.src }}"
-        dest: "{{ item.dest }}"
-        owner: root
-        group: root
-        mode: "{{ item.mode }}"
-      loop:
-        - src: "{{ ssl_cert_src }}"
-          dest: "{{ ssl_cert_file }}"
-          mode: "0644"
-        - src: "{{ ssl_key_src }}"
-          dest: "{{ ssl_key_file }}"
-          mode: "0600"
-      when: item.src | length > 0
+        - name: Copy custom SSL certificate/key if provided
+          copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+          loop:
+            - src: "{{ ssl_cert_src }}"
+              dest: "{{ ssl_cert_file }}"
+              mode: "0644"
+            - src: "{{ ssl_key_src }}"
+              dest: "{{ ssl_key_file }}"
+              mode: "0600"
+          when: item.src | length > 0
 
-    - name: Generate self-signed SSL certificate if missing
-      command: >
-        openssl req -x509 -nodes -newkey rsa:4096
-        -keyout "{{ ssl_key_file }}"
-        -out "{{ ssl_cert_file }}"
-        -days 3650
-        -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
-        -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
-      args:
-        creates: "{{ ssl_cert_file }}"
-      when: ssl_cert_src | length == 0
-      notify: restart nginx
+        - name: Generate self-signed SSL certificate if missing
+          command: >
+            openssl req -x509 -nodes -newkey rsa:4096
+            -keyout "{{ ssl_key_file }}"
+            -out "{{ ssl_cert_file }}"
+            -days 3650
+            -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
+            -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
+          args:
+            creates: "{{ ssl_cert_file }}"
+          when: ssl_cert_src | length == 0
+          notify: restart nginx
+
+        - name: Trust self-signed SSL certificate on host
+          copy:
+            src: "{{ ssl_cert_file }}"   # path on target
+            dest: "/etc/ca-certificates/trust-source/anchors/{{ hostname }}.crt"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: yes
+          notify: Update system CA certificates
+          when: ssl_cert_file is defined and ssl_cert_file | length > 0
 
     - name: Create web root directory
       file:
@@ -1021,6 +1032,9 @@
     - name: regenerate grub config
       command: grub-mkconfig -o /boot/grub/grub.cfg
       listen: "regenerate grub config"
+
+    - name: Update system CA certificates
+      command: update-ca-trust
 
     - name: restart cockpit
       systemd:
