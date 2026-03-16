@@ -24,8 +24,6 @@
 #        ansible-playbook zenith-ams.yml -e execute_system_installation=1
 #      This will install the base system, configure disks, users, network,
 #      and essential services, then reboot if needed.
-#   3. Monitor logs during installation (optional):
-#        ssh <ansible_user>@<host> 'tail -f /var/log/archinstall/*.log'
 #
 # Subsequent Runs:
 #   Run the playbook without the installation flag to update packages,
@@ -178,14 +176,18 @@
       - xf86-video-voodoo # Legacy 3dfx Voodoo cards
 
     graphical_packages:
+      - doublecmd-qt6
+      - feh
+      - firefox
+      - fuse
+      - gvfs
+      - openbox
+      - unclutter
       - xorg-server
       - xorg-xinit
       - xorg-xrandr
       - xorg-xset
-      - openbox
-      - firefox
-      - doublecmd-qt6
-      - unclutter
+      - xterm
 
     # -----------------------------
     # Desktop / Graphics Profile
@@ -201,7 +203,17 @@
     # -----------------------------
     enable_autologin: true # Set to true to enable console autologin on tty1
     enable_graphical: true # Set to true to install Xorg/Openbox GUI
-    jellyfin_autostart: false # Set to true to autostart Jellyfin Desktop on X session
+    jellyfin_autostart: true # Set to true to autostart Jellyfin Desktop on X session
+
+    # -----------------------------
+    # Openbox Configuration
+    # -----------------------------
+    wallpaper_svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1920 1080'><rect width='100%' height='100%' fill='#0c0d0e'/><g opacity='.04' stroke='#fff'><path d='M0 200h1920M0 400h1920M0 600h1920M0 800h1920'/></g><polygon points='960,220 1240,760 680,760' fill='#1793d1'/><polygon points='960,300 1180,720 740,720' fill='#1c1c1c'/><polygon points='960,220 1240,760 680,760' fill='none' stroke='#1793d1' stroke-width='6' opacity='.25'/><text x='960' y='820' text-anchor='middle' fill='#fff' font-family='monospace' font-size='42' letter-spacing='6' opacity='.85'>ZEnITH</text><text x='960' y='860' text-anchor='middle' fill='#1793d1' font-family='monospace' font-size='16' opacity='.7'>Arch Media Station</text></svg>"
+
+    openbox_autostart_programs:
+      - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
+      - "unclutter &"
+      - "{{ 'jellyfin-desktop --fullscreen &' if jellyfin_autostart else omit }}"
 
     # -----------------------------
     # System Services
@@ -309,7 +321,7 @@
       pause:
         seconds: 3
         prompt: |
-          [!] execute_system_installation flag not set. 
+          [!] execute_system_installation flag not set.
           Run with '-e execute_system_installation=1' to run the installation.
           Continuing...
       when: not execute_system_installation | bool
@@ -483,8 +495,9 @@
             state: mounted
           when: secondary_disk_uuid | length > 0
 
-        - name: Set default ACL so new files inherit jellyfin group RWX【32†L176-L183】
-          command: setfacl -d -m g:jellyfin:rwx /media
+    - name: Ensure /media default ACL grants jellyfin group RWX
+      shell: "getfacl -d /media | grep -q '^group:jellyfin:rwx' || setfacl -d -m g:jellyfin:rwx /media"
+      changed_when: false
       when: secondary_disk_uuid | length > 0 or true
 
     - name: Set CPU governor to performance
@@ -861,6 +874,13 @@
             path: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
             mode: "0755"
 
+        - name: Link Jellyfin Desktop to /usr/local/bin
+          file:
+            src: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
+            dest: /usr/local/bin/jellyfin-desktop
+            state: link
+            mode: "0755"
+
         - name: Create .xinitrc for {{ user_name }}
           copy:
             dest: "/home/{{ user_name }}/.xinitrc"
@@ -870,11 +890,7 @@
             content: |
               xset -dpms
               xset s off
-              unclutter &
-              openbox &
-              {% if jellyfin_autostart %}
-              /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen &
-              {% endif %}
+              exec openbox-session
 
         - name: Add startx on tty1 login to .bash_profile for {{ user_name }}
           blockinfile:
@@ -887,48 +903,73 @@
                   startx
               fi
 
-        - name: Create Openbox system config directory
+        - name: Ensure Openbox directories exist
           file:
-            path: /etc/xdg/openbox
+            path: "{{ item }}"
             state: directory
+            mode: "0755"
+          loop:
+            - /usr/share/backgrounds
+            - /etc/xdg/openbox
 
-        - name: Configure Openbox keybindings and window rules
+        - name: Deploy ZEnITH wallpaper
           copy:
-            dest: /etc/xdg/openbox/rc.xml
+            dest: /usr/share/backgrounds/zenith-wallpaper.svg
+            content: "{{ wallpaper_svg }}"
+            mode: "0644"
+
+        - name: Configure Openbox autostart
+          copy:
+            dest: /etc/xdg/openbox/autostart
             mode: "0644"
             content: |
-              <?xml version="1.0" encoding="UTF-8"?>
-              <openbox_config>
-                <desktops>
-                  <number>1</number>
-                </desktops>
-                <keyboard>
-                  <keybind key="W-j">
-                    <action name="Execute">
-                      <command>/opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage --fullscreen</command>
-                    </action>
-                  </keybind>
-                  <keybind key="W-f">
-                    <action name="Execute">
-                      <command>firefox</command>
-                    </action>
-                  </keybind>
-                  <keybind key="W-d">
-                    <action name="Execute">
-                      <command>doublecmd</command>
-                    </action>
-                  </keybind>
-                  <keybind key="W-q">
-                    <action name="Close"/>
-                  </keybind>
-                </keyboard>
-                <applications>
-                  <application name="JellyfinDesktop-x86_64.AppImage">
-                    <decor>no</decor>
-                    <maximized>yes</maximized>
-                  </application>
-                </applications>
-              </openbox_config>
+              {% for p in openbox_autostart_programs if p is defined %}
+              {{ p }}
+              {% endfor %}
+
+        - name: Deploy Openbox configuration files
+          copy:
+            dest: "{{ item.dest }}"
+            mode: "0644"
+            content: "{{ item.content }}"
+          loop:
+            - dest: /etc/xdg/openbox/menu.xml
+              content: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <openbox_menu xmlns="http://openbox.org/3.4/menu">
+                  <menu id="root-menu" label="Openbox 3">
+                    <item label="Terminal"><action name="Execute"><command>xterm</command></action></item>
+                    <item label="Web Browser"><action name="Execute"><command>firefox</command></action></item>
+                    <item label="Jellyfin Desktop"><action name="Execute"><command>jellyfin-desktop</command></action></item>
+                    <separator/>
+                    <item label="File Manager"><action name="Execute"><command>doublecmd</command></action></item>
+                    <separator/>
+                    <item label="Restart Openbox"><action name="Restart"/></item>
+                    <item label="Exit"><action name="Exit"/></item>
+                  </menu>
+                </openbox_menu>
+
+            - dest: /etc/xdg/openbox/rc.xml
+              content: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <openbox_config>
+                  <desktops><number>1</number></desktops>
+                  <keyboard>
+                    <keybind key="W-j"><action name="Execute"><command>jellyfin-desktop</command></action></keybind>
+                    <keybind key="W-f"><action name="Execute"><command>firefox</command></action></keybind>
+                    <keybind key="W-d"><action name="Execute"><command>doublecmd</command></action></keybind>
+                    <keybind key="W-t"><action name="Execute"><command>xterm</command></action></keybind>
+                    <keybind key="W-q"><action name="Close"/></keybind>
+                  </keyboard>
+                  <mouse>
+                    <context name="Desktop">
+                      <mousebind button="Right" action="Press">
+                        <action name="ShowMenu"><menu>root-menu</menu></action>
+                      </mousebind>
+                    </context>
+                  </mouse>
+                  <menu><file>/etc/xdg/openbox/menu.xml</file></menu>
+                </openbox_config>
       when: enable_graphical
 
     # -----------------------------
