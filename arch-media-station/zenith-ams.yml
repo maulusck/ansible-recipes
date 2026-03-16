@@ -1,39 +1,31 @@
 ---
 # -----------------------------------------------------------------------------
-# ZEnITH AMS – Zen Entertainment Integration Technology Haven Arch Media Station
+# ZEnITH AMS – Arch Media Station
 # -----------------------------------------------------------------------------
 # Overview:
-#   ZEnITH AMS turns a plain Arch Linux machine into a fully equipped
-#   media station. It provides:
-#     • Media streaming via Jellyfin
-#     • Torrent management via qBittorrent
-#     • Web-based administration with Cockpit
-#     • System monitoring with Glances
-#     • Secure, SSL-enabled access via nginx reverse proxy
+#   Turns a fresh Arch Linux machine into a full-featured media server:
+#     • Jellyfin for media streaming
+#     • qBittorrent for torrents
+#     • Cockpit for web-based administration
+#     • Glances for system monitoring
+#     • Nginx reverse proxy with SSL
 #     • Snapshots for safe updates and rollback
+#     • Optional GUI: Xorg + Openbox
 #
 # Who is this for:
-#   Anyone looking to quickly set up a robust media server on bare-metal
-#   or virtual machines, with sensible defaults but full control over
-#   users, disks, network, and services.
+#   Users wanting a ready-to-use Arch media server with sensible defaults
+#   but full control over disks, users, network, and services.
 #
-# Installation – First Run:
-#   1. Set your desired variables in the playbook (hostname, users, disk,
-#      encryption, packages, network type, etc.)
-#   2. Run the playbook with the installation flag:
+# Usage:
+#   1. Edit variables in this playbook (hostname, user, disk, network, packages).
+#   2. First-time system install:
 #        ansible-playbook zenith-ams.yml -e execute_system_installation=1
-#      This will install the base system, configure disks, users, network,
-#      and essential services, then reboot if needed.
-#
-# Subsequent Runs:
-#   Run the playbook without the installation flag to update packages,
-#   reconfigure services, or apply any changes safely:
+#      Subsequent runs (updates/config changes):
 #        ansible-playbook zenith-ams.yml
 #
 # Philosophy:
-#   Designed for simplicity, reliability, and maintainability. It provides
-#   a working media station out of the box while leaving room for
-#   customization and growth.
+#   Simple, reliable, maintainable. Works out-of-the-box while remaining
+#   fully customizable and safe to update via snapshots.
 # -----------------------------------------------------------------------------
 
 - name: ZEnITH AMS - Setup
