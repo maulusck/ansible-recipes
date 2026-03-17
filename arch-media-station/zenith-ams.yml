@@ -433,11 +433,11 @@
         - name: Override Ansible host for the rest of the playbook
           set_fact:
             ansible_host: "{{ new_ip_input.user_input | default(ansible_host | default(inventory_hostname), true) }}"
+
+        - name: Re-gather facts after reboot and possible IP change
+          setup:
     # End of installation
 
-    # Post-install media setup
-    - name: Re-gather facts after reboot and possible IP change
-      setup:
 
     - name: Make sure packages are installed
       pacman:
