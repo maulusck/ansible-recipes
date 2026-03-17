@@ -471,29 +471,62 @@
               line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
               notify: regenerate grub config
 
-    - name: Configure media root and optional secondary disk
-      block:
-        - name: Ensure /media exists with SGID bit
-          file:
-            path: /media
-            state: directory
-            owner: "{{ user_name }}"
-            group: jellyfin
-            mode: "2775"
+        - name: Configure /media and Jellyfin access
+          block:
+            - name: Ensure /media exists
+              file:
+                path: /media
+                state: directory
+                owner: "{{ user_name }}"
+                group: "{{ user_name }}"
+                mode: "0755"
 
-        - name: Mount secondary disk at /media (if specified)
-          mount:
-            path: /media
-            src: "UUID={{ secondary_disk_uuid }}"
-            fstype: "{{ secondary_disk_fs }}"
-            opts: "{{ secondary_disk_opts }}"
-            state: mounted
-          when: secondary_disk_uuid | length > 0
+            - name: Mount secondary disk at /media (if specified)
+              mount:
+                path: /media
+                src: "UUID={{ secondary_disk_uuid }}"
+                fstype: "{{ secondary_disk_fs }}"
+                opts: "{{ secondary_disk_opts }}"
+                state: mounted
+              when: secondary_disk_uuid | length > 0
 
-    - name: Ensure /media default ACL grants jellyfin group RWX
-      shell: "getfacl -d /media | grep -q '^group:jellyfin:rwx' || setfacl -d -m g:jellyfin:rwx /media"
-      changed_when: false
-      when: secondary_disk_uuid | length > 0 or true
+            - name: Set directory permissions to 755
+              find:
+                paths: /media
+                file_type: directory
+              register: media_dirs
+            - file:
+                path: "{{ item.path }}"
+                mode: "0755"
+              loop: "{{ media_dirs.files }}"
+
+            - name: Set file permissions to 644
+              find:
+                paths: /media
+                file_type: file
+              register: media_files
+            - file:
+                path: "{{ item.path }}"
+                mode: "0644"
+              loop: "{{ media_files.files }}"
+
+            - name: Ensure existing /media files/dirs are readable by jellyfin
+              acl:
+                path: /media
+                entity: jellyfin
+                etype: group
+                permissions: rx
+                recurse: yes
+                state: present
+
+            - name: Set default ACL for future files/dirs
+              acl:
+                path: /media
+                entity: jellyfin
+                etype: group
+                permissions: rx
+                default: yes
+                state: present
 
     - name: Set CPU governor to performance
       lineinfile:
