@@ -993,6 +993,7 @@
                     <keybind key="A-F4"><action name="Close"/></keybind>
                     <keybind key="A-Tab"><action name="NextWindow"/></keybind>
                     <keybind key="A-S-Tab"><action name="PreviousWindow"/></keybind>
+                    <keybind key="C-A-Delete"><action name="Exit"/></keybind>
                   </keyboard>
                   <mouse>
                     <dragThreshold>8</dragThreshold>
