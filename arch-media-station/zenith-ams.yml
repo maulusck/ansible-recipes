@@ -100,6 +100,7 @@
       - python-fastapi
       - python-jellyfin-apiclient
       - qbittorrent-nox
+      - qps
       - snap-pac
       - uvicorn
       # Monitoring tools (TUI-friendly)
@@ -940,16 +941,17 @@
               content: |
                 <?xml version="1.0" encoding="UTF-8"?>
                 <openbox_menu xmlns="http://openbox.org/3.4/menu">
-                  <menu id="root-menu" label="Openbox 3">
-                    <item label="Terminal"><action name="Execute"><command>xterm</command></action></item>
-                    <item label="Web Browser"><action name="Execute"><command>firefox</command></action></item>
-                    <item label="Jellyfin Desktop"><action name="Execute"><command>jellyfin-desktop</command></action></item>
-                    <separator/>
-                    <item label="File Manager"><action name="Execute"><command>doublecmd</command></action></item>
-                    <separator/>
-                    <item label="Restart Openbox"><action name="Restart"/></item>
-                    <item label="Exit"><action name="Exit"/></item>
-                  </menu>
+                <menu id="root-menu" label="Openbox 3">
+                  <item label="Terminal [Win+T]"><action name="Execute"><command>xterm</command></action></item>
+                  <item label="Web Browser [Win+W]"><action name="Execute"><command>firefox</command></action></item>
+                  <item label="Jellyfin Desktop [Win+J]"><action name="Execute"><command>jellyfin-desktop</command></action></item>
+                  <separator/>
+                  <item label="File Manager [Win+E]"><action name="Execute"><command>doublecmd</command></action></item>
+                  <item label="Task Manager [Ctrl+Shift+ESC]"><action name="Execute"><command>qps</command></action></item>
+                  <separator/>
+                  <item label="Restart Openbox"><action name="Restart"/></item>
+                  <item label="Exit"><action name="Exit"/></item>
+                </menu>
                 </openbox_menu>
 
             - dest: /etc/xdg/openbox/rc.xml
@@ -958,10 +960,11 @@
                 <openbox_config>
                   <desktops><number>1</number></desktops>
                   <keyboard>
+                    <keybind key="W-w"><action name="Execute"><command>firefox</command></action></keybind>
+                    <keybind key="W-e"><action name="Execute"><command>doublecmd</command></action></keybind>
                     <keybind key="W-j"><action name="Execute"><command>jellyfin-desktop</command></action></keybind>
-                    <keybind key="W-f"><action name="Execute"><command>firefox</command></action></keybind>
-                    <keybind key="W-d"><action name="Execute"><command>doublecmd</command></action></keybind>
                     <keybind key="W-t"><action name="Execute"><command>xterm</command></action></keybind>
+                    <keybind key="C-S-ESC"><action name="Execute"><command>qps</command></action></keybind>
                     <keybind key="W-q"><action name="Close"/></keybind>
                   </keyboard>
                   <mouse>
