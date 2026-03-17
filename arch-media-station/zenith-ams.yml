@@ -317,10 +317,10 @@
           [!] execute_system_installation flag not set.
           Run with '-e execute_system_installation=1' to run the installation.
           Continuing...
-      when: not execute_system_installation | bool
+      when: not execute_system_installation | default(false) | bool
 
     - name: Run system installation
-      when: execute_system_installation | bool
+      when: execute_system_installation | default(false) | bool
       block:
         - name: Copy Archinstall config.json (Garuda-style)
           copy:
@@ -1021,7 +1021,7 @@
       reboot:
         reboot_timeout: 60
       ignore_unreachable: true
-      when: execute_system_installation | bool
+      when: execute_system_installation | default(false) | bool
 
   handlers:
     - name: regenerate grub config
