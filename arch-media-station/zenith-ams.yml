@@ -614,6 +614,9 @@
             -out "{{ ssl_cert_file }}"
             -days 3650
             -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
+            -addext "basicConstraints=CA:TRUE,pathlen:0"
+            -addext "keyUsage=digitalSignature,keyEncipherment,keyCertSign,cRLSign"
+            -addext "extendedKeyUsage=serverAuth,clientAuth"
             -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
           args:
             creates: "{{ ssl_cert_file }}"
