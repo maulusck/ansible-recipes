@@ -814,6 +814,30 @@
             state: "{{ 'started' if enable_automatic_updates | bool else 'stopped' }}"
             enabled: "{{ enable_automatic_updates | bool }}"
 
+        - name: Configure system-wide tmux
+          copy:
+            dest: /etc/tmux.conf
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Mouse support
+              set -g mouse on
+              # Colors: black text on cyan background
+              set -g default-terminal "tmux-256color"
+              set -g status-bg cyan
+              set -g status-fg black
+              set -g pane-border-fg black
+              set -g pane-active-border-fg black
+              set -g message-bg cyan
+              set -g message-fg black
+              set -g window-status-current-bg cyan
+              set -g window-status-current-fg black
+              set -g window-status-bg black
+              set -g window-status-fg cyan
+              # Ctrl+V to paste from system clipboard
+              bind C-v run "tmux set-buffer \"$(xclip -o -selection clipboard)\"; tmux paste-buffer"
+
     - name: Deploy minimal RCs and default user-editable aliases
       copy:
         dest: "{{ item.dest }}"
