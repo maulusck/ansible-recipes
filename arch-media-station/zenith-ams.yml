@@ -835,8 +835,6 @@
               set -g window-status-current-fg black
               set -g window-status-bg black
               set -g window-status-fg cyan
-              # Ctrl+V to paste from system clipboard
-              bind C-v run "tmux set-buffer \"$(xclip -o -selection clipboard)\"; tmux paste-buffer"
 
     - name: Deploy minimal RCs and default user-editable aliases
       copy:
