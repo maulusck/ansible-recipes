@@ -825,9 +825,10 @@
             group: root
             mode: "0644"
             content: |
-              # Mouse support
+              # Terminal
+              set -g history-limit 999999
               set -g mouse on
-              # Colors: black text on cyan background
+              # Colors
               set -g default-terminal "tmux-256color"
               set -g status-bg cyan
               set -g status-fg black
