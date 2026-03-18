@@ -48,7 +48,7 @@
     # -----------------------------
     # System Configuration
     # -----------------------------
-    hostname: "media-station" # hostname for system
+    hostname: "moxxi.ppg8.lan" # hostname for system
     timezone: "UTC" # timezone, e.g., 'Europe/Berlin'
 
     disk_device: "/dev/sda" # primary disk device
@@ -60,7 +60,7 @@
     kernel: "linux-zen" # kernel package, e.g., 'linux', 'linux-zen', 'linux-lts'
 
     root_password: "testing" # root password for system; leave empty to disable root login
-    user_name: "mediauser" # non-root user
+    user_name: "media" # non-root user
     user_password: "testing" # non-root user password
 
     snapshot_limit: 8 # snapper normal snapshot limit
@@ -149,24 +149,24 @@
       # Core Xorg library
       - libxxf86vm
       # Input drivers
-      - xf86-input-elographics # Elographics touchscreen hardware
-      - xf86-input-evdev # Legacy generic input driver
+      #- xf86-input-elographics # Elographics touchscreen hardware
+      #- xf86-input-evdev # Legacy generic input driver
       - xf86-input-libinput # Modern default input stack (recommended)
-      - xf86-input-synaptics # Older touchpad driver (libinput usually replaces this)
+      #- xf86-input-synaptics # Older touchpad driver (libinput usually replaces this)
       - xf86-input-vmmouse # VMware virtual machine mouse driver
-      - xf86-input-void # Dummy input driver (rarely needed)
-      - xf86-input-wacom # Wacom tablet support
+      #- xf86-input-void # Dummy input driver (rarely needed)
+      #- xf86-input-wacom # Wacom tablet support
       # Video drivers
-      - xf86-video-amdgpu # Modern AMD GPUs
-      - xf86-video-ati # Older Radeon GPUs
-      - xf86-video-dummy # Virtual display / headless X
+      #- xf86-video-amdgpu # Modern AMD GPUs
+      #- xf86-video-ati # Older Radeon GPUs
+      #- xf86-video-dummy # Virtual display / headless X
       - xf86-video-fbdev # Generic framebuffer fallback
       - xf86-video-intel # Intel integrated graphics
       - xf86-video-nouveau # Open-source NVIDIA driver
-      - xf86-video-qxl # SPICE/QEMU virtual GPU
-      - xf86-video-sisusb # SiS USB display adapters (very rare)
+      # - xf86-video-qxl # SPICE/QEMU virtual GPU
+      # - xf86-video-sisusb # SiS USB display adapters (very rare)
       - xf86-video-vesa # Universal fallback driver
-      - xf86-video-voodoo # Legacy 3dfx Voodoo cards
+      #- xf86-video-voodoo # Legacy 3dfx Voodoo cards
 
     graphical_packages:
       - doublecmd-qt6
@@ -207,8 +207,7 @@
     openbox_autostart_programs:
       - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
       - "unclutter &"
-      - "picom &"
-      - "{{ 'jellyfin-kiosk &' if jellyfin_autostart else omit }}"
+      - "{{ 'jellyfin-desktop --fullscreen &' if jellyfin_autostart else omit }}"
 
     # -----------------------------
     # System Services
@@ -243,9 +242,9 @@
     # -----------------------------
     # Optional Secondary Disk
     # -----------------------------
-    secondary_disk_uuid: "" # leave empty to skip mounting secondary disk
-    secondary_disk_fs: "ext4" # optional, defaults to ext4
-    secondary_disk_opts: "defaults,noatime,nodiratime"
+    secondary_disk_uuid: "0ea7d1eb-5c4d-4518-a808-93546fc2fddf" # leave empty to skip mounting secondary disk
+    secondary_disk_fs: "btrfs" # optional, defaults to ext4
+    secondary_disk_opts: "defaults,noatime,nodiratime,nodatacow"
 
     # -----------------------------
     # SSL Configuration
