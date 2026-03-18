@@ -252,13 +252,14 @@
     # SSL Configuration
     # -----------------------------
     ssl_cert_dir: "/etc/ssl/private"
-    # Optional custom cert/key
-    ssl_cert_src: "" # leave empty to
-    ssl_key_src: "" # e.g. /root/mykey.pem
-    # Destination cert/key names (computed)
+    ssl_subject: "/C=US/ST=None/L=None/O=MediaStation/OU=Server"
+    ssl_cert_src: ""      # Optional user-provided cert
+    ssl_key_src: ""       # Optional user-provided key
+    ssl_ca_src: ""        # Optional user-provided CA
     ssl_cert_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.crt' }}"
     ssl_key_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.key' }}"
-    ssl_subject: "/C=US/ST=None/L=None/O=MediaStation/OU=Server"
+    ssl_ca_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '-ca.crt' }}"
+    ssl_ca_key_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '-ca.key' }}"
 
     # -----------------------------
     # Network
@@ -306,11 +307,6 @@
         packages: "{{ (packages | default([])) + (bare_metal_packages | default([])) }}"
         system_services: "{{ (system_services | default([])) + (bare_metal_services | default([])) }}"
       when: not is_vm
-
-    - name: Resolve SSL certificate paths
-      set_fact:
-        ssl_cert_file: "{{ ssl_cert_file if ssl_cert_file | length > 0 else ssl_cert_dir ~ '/' ~ hostname ~ '.crt' }}"
-        ssl_key_file: "{{ ssl_key_file if ssl_key_file | length > 0 else ssl_cert_dir ~ '/' ~ hostname ~ '.key' }}"
 
   tasks:
     - name: Inform user about execute_system_installation variable and pause
@@ -583,6 +579,7 @@
 
     - name: Ensure SSL certificate/key exist and are trusted
       block:
+
         - name: Ensure SSL directory exists
           file:
             path: "{{ ssl_cert_dir }}"
@@ -600,33 +597,49 @@
             mode: "{{ item.mode }}"
           loop:
             - src: "{{ ssl_cert_src }}"
-              dest: "{{ ssl_cert_file }}"
+              dest: "{{ ssl_cert_dir }}/{{ hostname }}.crt"
               mode: "0644"
             - src: "{{ ssl_key_src }}"
-              dest: "{{ ssl_key_file }}"
+              dest: "{{ ssl_cert_dir }}/{{ hostname }}.key"
+              mode: "0600"
+            - src: "{{ ssl_ca_src }}"
+              dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+              mode: "0644"
+            - src: "{{ ssl_ca_key_src }}"
+              dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
               mode: "0600"
           when: item.src | length > 0
 
-        - name: Generate self-signed SSL certificate if missing
+        - name: Generate local CA key and certificate if missing
           command: >
             openssl req -x509 -nodes -newkey rsa:4096
-            -keyout "{{ ssl_key_file }}"
-            -out "{{ ssl_cert_file }}"
+            -keyout "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
+            -out "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
             -days 3650
-            -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
+            -subj "{{ ssl_subject }}/CN={{ hostname }} CA"
             -addext "basicConstraints=CA:TRUE,pathlen:0"
-            -addext "keyUsage=digitalSignature,keyEncipherment,keyCertSign,cRLSign"
-            -addext "extendedKeyUsage=serverAuth,clientAuth"
-            -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
+            -addext "keyUsage=keyCertSign,cRLSign"
           args:
-            creates: "{{ ssl_cert_file }}"
-          when: ssl_cert_src | length == 0
+            creates: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+
+        - name: Generate host certificate and key signed by local CA if missing
+          command: >
+            openssl req -new -x509 -nodes -newkey rsa:4096
+            -keyout "{{ ssl_cert_dir }}/{{ hostname }}.key"
+            -out "{{ ssl_cert_dir }}/{{ hostname }}.crt"
+            -days 3650 -sha256
+            -subj "{{ ssl_subject }}/CN={{ hostname }}"
+            -CA "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+            -CAkey "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
+            -set_serial 01
+          args:
+            creates: "{{ ssl_cert_dir }}/{{ hostname }}.crt"
           notify: restart nginx
 
-        - name: Trust self-signed SSL certificate on host
+        - name: Trust local CA on host
           copy:
-            src: "{{ ssl_cert_file }}"   # path on target
-            dest: "/etc/ca-certificates/trust-source/anchors/{{ hostname }}.crt"
+            src: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+            dest: "/etc/ca-certificates/trust-source/anchors/{{ hostname }}-ca.crt"
             owner: root
             group: root
             mode: "0644"
@@ -697,8 +710,8 @@
             server {
               listen 443 ssl default_server;
               server_name {{ hostname }};
-              ssl_certificate {{ ssl_cert_file }};
-              ssl_certificate_key {{ ssl_key_file }};
+              ssl_certificate {{ ssl_cert_dir }}/{{ hostname }}.crt;
+              ssl_certificate_key {{ ssl_cert_dir }}/{{ hostname }}.key;
               ssl_protocols TLSv1.2 TLSv1.3;
               ssl_session_cache shared:SSL:10m;
               ssl_session_timeout 10m;
@@ -869,6 +882,7 @@
           mode: "0644"
           force: false
           content: |
+            alias ls='ls --color=auto'
             alias ll='ls -alF'
             alias la='ls -A'
             alias l='ls -CF'
