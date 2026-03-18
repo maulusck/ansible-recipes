@@ -208,7 +208,7 @@
       - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
       - "unclutter &"
       - "picom &"
-      - "{{ 'jellyfin-desktop --fullscreen &' if jellyfin_autostart else omit }}"
+      - "{{ 'jellyfin-kiosk &' if jellyfin_autostart else omit }}"
 
     # -----------------------------
     # System Services
@@ -628,7 +628,6 @@
             mode: "0644"
             remote_src: yes
           notify: Update system CA certificates
-          when: ssl_cert_file is defined and ssl_cert_file | length > 0
 
     - name: Create web root directory
       file:
@@ -895,30 +894,16 @@
               - lp
             append: true
 
-        - name: Ensure /opt/jellyfin-desktop exists
-          file:
-            path: /opt/jellyfin-desktop
-            state: directory
+        - name: Deploy jellyfin-kiosk wrapper script
+          copy:
+            dest: /usr/local/bin/jellyfin-kiosk
+            owner: root
+            group: root
             mode: "0755"
-
-        - name: Download and extract Jellyfin Desktop AppImage
-          unarchive:
-            src: https://nightly.link/jellyfin/jellyfin-desktop/workflows/build-appimage/master/linux-appimage-x86_64.zip
-            dest: /opt/jellyfin-desktop/
-            remote_src: yes
-            creates: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
-
-        - name: Ensure Jellyfin Desktop AppImage is executable
-          file:
-            path: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
-            mode: "0755"
-
-        - name: Link Jellyfin Desktop to /usr/local/bin
-          file:
-            src: /opt/jellyfin-desktop/JellyfinDesktop-x86_64.AppImage
-            dest: /usr/local/bin/jellyfin-desktop
-            state: link
-            mode: "0755"
+            content: |
+              #!/bin/sh
+              HOST=$(hostnamectl --transient)
+              exec firefox --kiosk "https://${HOST}/web/"
 
         - name: Create .xinitrc for {{ user_name }}
           copy:
@@ -979,7 +964,7 @@
                   <menu id="root-menu" label="Openbox 3">
                     <item label="Terminal [Win+T]"><action name="Execute"><command>xterm</command></action></item>
                     <item label="Web Browser [Win+W]"><action name="Execute"><command>firefox</command></action></item>
-                    <item label="Jellyfin [Win+J]"><action name="Execute"><command>jellyfin-desktop</command></action></item>
+                    <item label="Jellyfin [Win+J]"><action name="Execute"><command>jellyfin-kiosk</command></action></item>
                     <separator/>
                     <item label="File Manager [Win+E]"><action name="Execute"><command>doublecmd</command></action></item>
                     <item label="Task Manager [Ctrl+Shift+ESC]"><action name="Execute"><command>qps</command></action></item>
@@ -1019,7 +1004,7 @@
                     <chainQuitKey>C-g</chainQuitKey>
                     <keybind key="W-w"><action name="Execute"><command>firefox</command></action></keybind>
                     <keybind key="W-e"><action name="Execute"><command>doublecmd</command></action></keybind>
-                    <keybind key="W-j"><action name="Execute"><command>jellyfin-desktop</command></action></keybind>
+                    <keybind key="W-j"><action name="Execute"><command>jellyfin-kiosk</command></action></keybind>
                     <keybind key="W-t"><action name="Execute"><command>xterm</command></action></keybind>
                     <keybind key="C-S-Escape"><action name="Execute"><command>qps</command></action></keybind>
                     <keybind key="W-q"><action name="Close"/></keybind>
