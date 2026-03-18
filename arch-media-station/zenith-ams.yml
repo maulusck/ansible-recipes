@@ -112,6 +112,7 @@
       - 7zip
       - bat
       - duf
+      - less
       - mc
       - nano
       - ncdu
