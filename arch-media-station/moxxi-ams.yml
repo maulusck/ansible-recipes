@@ -112,6 +112,7 @@
       - 7zip
       - bat
       - duf
+      - less
       - mc
       - nano
       - ncdu
@@ -207,7 +208,7 @@
     openbox_autostart_programs:
       - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
       - "unclutter &"
-      - "{{ 'jellyfin-desktop --fullscreen &' if jellyfin_autostart else omit }}"
+      - "{{ 'jellyfin-kiosk --fullscreen &' if jellyfin_autostart else omit }}"
 
     # -----------------------------
     # System Services
@@ -612,6 +613,9 @@
             -out "{{ ssl_cert_file }}"
             -days 3650
             -subj "{{ ssl_subject }}/CN={{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},{{ ansible_facts.fqdn }}{% endif %}"
+            -addext "basicConstraints=CA:TRUE,pathlen:0"
+            -addext "keyUsage=digitalSignature,keyEncipherment,keyCertSign,cRLSign"
+            -addext "extendedKeyUsage=serverAuth,clientAuth"
             -addext "subjectAltName=DNS:{{ ansible_facts.hostname }}{% if ansible_facts.fqdn is defined and ansible_facts.fqdn != ansible_facts.hostname %},DNS:{{ ansible_facts.fqdn }}{% endif %}"
           args:
             creates: "{{ ssl_cert_file }}"
@@ -820,9 +824,10 @@
             group: root
             mode: "0644"
             content: |
-              # Mouse support
+              # Terminal
+              set -g history-limit 999999
               set -g mouse on
-              # Colors: black text on cyan background
+              # Colors
               set -g default-terminal "tmux-256color"
               set -g status-bg cyan
               set -g status-fg black
