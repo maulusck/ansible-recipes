@@ -627,6 +627,7 @@
             -addext "basicConstraints=CA:FALSE"
             -addext "keyUsage=digitalSignature,keyEncipherment"
             -addext "extendedKeyUsage=serverAuth,clientAuth"
+            -addext "subjectAltName=DNS:{{ hostname }}"
           args:
             creates: "{{ ssl_cert_dir }}/{{ hostname }}.crt"
           notify: restart nginx
