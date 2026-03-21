@@ -224,9 +224,12 @@
 
   # · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
   pre_tasks:
-    - name: Assemble
+    - name: Check host system
       set_fact:
         is_vm: "{{ ansible_facts.virtualization_type in ['kvm','vmware','virtualbox','qemu','hyperv'] }}"
+
+    - name: Assemble package/service lists
+      set_fact:
         packages: >-
           {{
             (pkg_core + pkg_network)
