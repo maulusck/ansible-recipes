@@ -2,271 +2,49 @@
 # -----------------------------------------------------------------------------
 # ZEnITH AMS – Arch Media Station
 # -----------------------------------------------------------------------------
-# Overview:
-#   Turns a fresh Arch Linux machine into a full-featured media server:
-#     • Jellyfin for media streaming
-#     • qBittorrent for torrents
-#     • Cockpit for web-based administration
-#     • Glances for system monitoring
-#     • Nginx reverse proxy with SSL
-#     • Snapshots for safe updates and rollback
-#     • Optional GUI: Xorg + Openbox
-#
-# Who is this for:
-#   Users wanting a ready-to-use Arch media server with sensible defaults
-#   but full control over disks, users, network, and services.
+# Turns a fresh Arch Linux machine into a full-featured media server:
+#   Jellyfin · qBittorrent · Cockpit · Glances · Nginx SSL · Snapshots · GUI
 #
 # Usage:
-#   1. Edit variables in this playbook (hostname, user, disk, network, packages).
-#   2. First-time system install:
-#        ansible-playbook zenith-ams.yml -e execute_system_installation=1
-#      Subsequent runs (updates/config changes):
-#        ansible-playbook zenith-ams.yml
-#
-# Philosophy:
-#   Simple, reliable, maintainable. Works out-of-the-box while remaining
-#   fully customizable and safe to update via snapshots.
+#   First-time install:  ansible-playbook zenith-ams.yml -e execute_system_installation=1
+#   Maintenance/update:  ansible-playbook zenith-ams.yml
 # -----------------------------------------------------------------------------
 
 - name: ZEnITH AMS - Setup
   hosts: all
   gather_facts: true
-  become: true
-  # -------------------------------------------------------------------------
-  # Arch Media Station
-  # -------------------------------------------------------------------------
 
   vars:
-    # -----------------------------
-    # SSH & Remote Connection
-    # -----------------------------
-    ansible_user: "root" # default SSH user for installation
-    ansible_port: 22 # SSH port
-    ansible_password: "testing" # password for ansible_user
+    # connection
+    ansible_user: "root"
+    ansible_port: 22
+    ansible_password: "testing"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
-    # -----------------------------
-    # System Configuration
-    # -----------------------------
-    hostname: "media-station" # hostname for system
-    timezone: "UTC" # timezone, e.g., 'Europe/Berlin'
+    # system
+    hostname: "media-station"
+    timezone: "UTC"
+    kernel: "linux-zen" # linux | linux-zen | linux-lts
+    bootloader: "grub" # grub | systemd-boot
+    disk_device: "/dev/sda"
+    root_partition_size: "25G"
+    disk_encryption_type: "none" # none | luks
+    disk_encryption_password: ""
+    root_password: "testing" # empty = disable root login
+    user_name: "media"
+    user_password: "testing"
 
-    disk_device: "/dev/sda" # primary disk device
-    root_partition_size: "25G" # root partition size
-    disk_encryption_type: "none" # allowed: 'luks' or 'none'
-    disk_encryption_password: "" # required if luks
-
-    bootloader: "grub" # allowed: 'grub', 'systemd-boot'
-    kernel: "linux-zen" # kernel package, e.g., 'linux', 'linux-zen', 'linux-lts'
-
-    root_password: "testing" # root password for system; leave empty to disable root login
-    user_name: "mediauser" # non-root user
-    user_password: "testing" # non-root user password
-
-    snapshot_limit: 8 # snapper normal snapshot limit
-    snapshot_important_limit: 4 # snapper important snapshot limit
-
-    # -----------------------------
-    # Packages Definitions
-    # -----------------------------
-    packages:
-      # Core filesystem & snapshots
-      - btrfs-progs
-      - grub-btrfs
-      - snapper
-      # Media server & playback
-      - ffmpeg
-      - jellyfin-mpv-shim
-      - jellyfin-server
-      - jellyfin-web
-      - mediainfo
-      - mpv
-      # Networking & remote access
-      - nfs-utils
-      - nginx
-      - openvpn
-      - openssh
-      - rclone
-      - rsync
-      - "{{ 'iwd' if network_type == 'nm_iwd' else omit }}"
-      - "{{ 'networkmanager' if network_type in ['nm','nm_iwd'] else omit }}"
-      # Security & firewall
-      - openssl
-      - ufw
-      # System & monitoring
-      - cockpit
-      - glances
-      - inotify-tools
-      - python-fastapi
-      - python-jellyfin-apiclient
-      - qbittorrent-nox
-      - qps
-      - snap-pac
-      - uvicorn
-      # Monitoring tools (TUI-friendly)
-      - bmon
-      - btop
-      - htop
-      - iotop
-      # File management & utilities
-      - 7zip
-      - bat
-      - duf
-      - less
-      - mc
-      - nano
-      - ncdu
-      - unrar
-      - unzip
-      - vim
-      # Shell & CLI Enhancements
-      - bash-completion
-      - byobu
-      - exa
-      - fastfetch
-      - fzf
-      - ripgrep
-      - tmux
-      - yt-dlp
-      - zsh
-      - zsh-completions
-      - zoxide
-
-    # -----------------------------
-    # Bare Metal Packages
-    # -----------------------------
-    bare_metal_packages:
-      - cpupower
-      - smartmontools
-      - lm_sensors
-      - hdparm
-      - nvme-cli
-      - ethtool
-
-    # -----------------------------
-    # GUI Session Packages
-    # -----------------------------
-    graphical_drivers:
-      # Core Xorg library
-      - libxxf86vm
-      # Input drivers
-      - xf86-input-elographics # Elographics touchscreen hardware
-      - xf86-input-evdev # Legacy generic input driver
-      - xf86-input-libinput # Modern default input stack (recommended)
-      - xf86-input-synaptics # Older touchpad driver (libinput usually replaces this)
-      - xf86-input-vmmouse # VMware virtual machine mouse driver
-      - xf86-input-void # Dummy input driver (rarely needed)
-      - xf86-input-wacom # Wacom tablet support
-      # Video drivers
-      - xf86-video-amdgpu # Modern AMD GPUs
-      - xf86-video-ati # Older Radeon GPUs
-      - xf86-video-dummy # Virtual display / headless X
-      - xf86-video-fbdev # Generic framebuffer fallback
-      - xf86-video-intel # Intel integrated graphics
-      - xf86-video-nouveau # Open-source NVIDIA driver
-      - xf86-video-qxl # SPICE/QEMU virtual GPU
-      - xf86-video-sisusb # SiS USB display adapters (very rare)
-      - xf86-video-vesa # Universal fallback driver
-      - xf86-video-voodoo # Legacy 3dfx Voodoo cards
-
-    graphical_packages:
-      - doublecmd-qt6
-      - feh
-      - firefox
-      - fuse
-      - gvfs
-      - openbox
-      - picom
-      - unclutter
-      - xorg-server
-      - xorg-xinit
-      - xorg-xrandr
-      - xorg-xset
-      - xterm
-
-    # -----------------------------
-    # Desktop / Graphics Profile
-    # -----------------------------
-    profile_gfx_driver: "All open-source" # allowed: 'Intel', 'AMD', 'Nvidia (proprietary)', etc.
-    profile_greeter: null # allowed: 'gdm', 'lightdm', null (headless)
-    profile_main: "Xorg" # allowed: 'Xorg', 'Wayland'
-    profile_custom_settings: {} # custom key/value settings for profile
-    profile_details: [] # extra profile details if needed
-
-    # -----------------------------
-    # Optional Features
-    # -----------------------------
-    enable_autologin: true # Set to true to enable console autologin on tty1
-    enable_graphical: true # Set to true to install Xorg/Openbox GUI
-    jellyfin_autostart: true # Set to true to autostart Jellyfin Desktop on X session
-
-    # -----------------------------
-    # Openbox Configuration
-    # -----------------------------
-    wallpaper_svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1920 1080'><rect width='100%' height='100%' fill='#0c0d0e'/><g opacity='.04' stroke='#fff'><path d='M0 200h1920M0 400h1920M0 600h1920M0 800h1920'/></g><polygon points='960,220 1240,760 680,760' fill='#1793d1'/><polygon points='960,300 1180,720 740,720' fill='#1c1c1c'/><polygon points='960,220 1240,760 680,760' fill='none' stroke='#1793d1' stroke-width='6' opacity='.25'/><text x='960' y='820' text-anchor='middle' fill='#fff' font-family='monospace' font-size='42' letter-spacing='6' opacity='.85'>ZEnITH</text><text x='960' y='860' text-anchor='middle' fill='#1793d1' font-family='monospace' font-size='16' opacity='.7'>Arch Media Station</text></svg>"
-
-    openbox_autostart_programs:
-      - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
-      - "unclutter &"
-      - "picom &"
-      - "{{ 'jellyfin-kiosk &' if jellyfin_autostart else omit }}"
-
-    # -----------------------------
-    # System Services
-    # -----------------------------
-    system_services:
-      - cockpit.socket
-      - glances-web
-      - grub-btrfsd
-      - jellyfin
-      - nginx
-      - qbittorrent-nox
-      - ufw
-    bare_metal_services:
-      - cpupower
-
-    # -----------------------------
-    # Automatic Updates
-    # -----------------------------
+    # features
+    enable_autologin: true
+    enable_graphical: true
+    enable_extras: true # pkg_cli — strip with -e enable_extras=false
     enable_automatic_updates: false
-    update_log_file: "/var/log/ams-update.log"
+    jellyfin_autostart: true
 
-    # -----------------------------
-    # UFW Firewall Profiles and Ports
-    # -----------------------------
-    ufw_profiles:
-      - SSH
-      - WWW
-      - "WWW Secure"
-    ufw_ports:
-      - 32400/tcp
-
-    # -----------------------------
-    # Optional Secondary Disk
-    # -----------------------------
-    secondary_disk_uuid: "" # leave empty to skip mounting secondary disk
-    secondary_disk_fs: "ext4" # optional, defaults to ext4
-    secondary_disk_opts: "defaults,noatime,nodiratime"
-
-    # -----------------------------
-    # SSL Configuration
-    # -----------------------------
-    ssl_cert_dir: "/etc/ssl/private"
-    ssl_subject: "/C=US/ST=None/L=None/O=MediaStation/OU=Server"
-    ssl_cert_src: ""      # Optional user-provided cert
-    ssl_key_src: ""       # Optional user-provided key
-    ssl_ca_src: ""        # Optional user-provided CA
-    ssl_cert_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.crt' }}"
-    ssl_key_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '.key' }}"
-    ssl_ca_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '-ca.crt' }}"
-    ssl_ca_key_file: "{{ ssl_cert_dir ~ '/' ~ hostname ~ '-ca.key' }}"
-
-    # -----------------------------
-    # Network
-    # -----------------------------
+    # network
+    network_type: "nm_iwd" # nm | nm_iwd | manual
     ntp_enabled: true
-    parallel_downloads: 5
-    network_type: "nm_iwd"
+    parallel_downloads: 15
     manual_nics:
       - iface: "ens18"
         dhcp: true
@@ -274,54 +52,209 @@
         gateway: null
         dns: []
 
-    # -----------------------------
-    # Password Hashes (SHA512)
-    # -----------------------------
+    # firewall
+    ufw_profiles: [SSH, WWW, "WWW Secure"]
+    ufw_ports: ["32400/tcp"]
+
+    # ssl
+    ssl_cert_src: "" # empty = auto-generate self-signed CA
+    ssl_key_src: ""
+    ssl_ca_src: ""
+    ssl_ca_key_src: ""
+    ssl_subject: "/C=US/ST=None/L=None/O=MediaStation/OU=Server"
+
+    # storage
+    secondary_disk_uuid: "" # empty = skip /media mount
+    secondary_disk_fs: "ext4"
+    secondary_disk_opts: "defaults,noatime,nodiratime"
+
+    # snapshots
+    snapshot_limit: 8
+    snapshot_important_limit: 4
+
+    # graphical
+    profile_gfx_driver: "All open-source"
+    profile_greeter: null
+    profile_main: "Xorg"
+    profile_custom_settings: {}
+    profile_details: []
+    openbox_autostart_programs:
+      - "feh --bg-fill /usr/share/backgrounds/zenith-wallpaper.svg &"
+      - "unclutter &"
+      - "picom &"
+      - "{{ 'jellyfin-kiosk &' if jellyfin_autostart else omit }}"
+
+    # packages
+    pkg_extra: []
+
+    # · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
+
+    pkg_core:
+      - ffmpeg
+      - jellyfin-server
+      - jellyfin-web
+      - mediainfo
+      - qbittorrent-nox
+      - nginx
+      - cockpit
+      - glances
+      - python-fastapi
+      - python-jellyfin-apiclient
+      - uvicorn
+      - btrfs-progs
+      - grub-btrfs
+      - snapper
+      - snap-pac
+      - inotify-tools
+      - openssh
+      - openssl
+      - ufw
+      - nfs-utils
+      - openvpn
+      - rclone
+      - rsync
+      - yt-dlp
+      - btop
+      - htop
+      - iotop
+      - bmon
+
+    pkg_network: >-
+      {{
+        (['networkmanager'] if network_type in ['nm','nm_iwd'] else [])
+        + (['iwd']          if network_type == 'nm_iwd'        else [])
+      }}
+
+    pkg_cli:
+      - 7zip
+      - bash-completion
+      - bat
+      - byobu
+      - duf
+      - exa
+      - fastfetch
+      - fzf
+      - less
+      - mc
+      - mpv
+      - nano
+      - ncdu
+      - ripgrep
+      - tmux
+      - unrar
+      - unzip
+      - vim
+      - zoxide
+      - zsh
+      - zsh-completions
+
+    pkg_bare_metal:
+      - cpupower
+      - ethtool
+      - hdparm
+      - lm_sensors
+      - nvme-cli
+      - smartmontools
+
+    pkg_graphical:
+      - doublecmd-qt6
+      - feh
+      - firefox
+      - fuse
+      - gvfs
+      - jellyfin-mpv-shim
+      - openbox
+      - picom
+      - qps
+      - rofi
+      - unclutter
+      - xorg-server
+      - xorg-xinit
+      - xorg-xrandr
+      - xorg-xset
+      - xterm
+
+    pkg_drivers:
+      - libxxf86vm
+      - xf86-input-libinput
+      - xf86-input-evdev
+      - xf86-input-synaptics
+      - xf86-input-vmmouse
+      - xf86-video-amdgpu
+      - xf86-video-ati
+      - xf86-video-intel
+      - xf86-video-nouveau
+      - xf86-video-fbdev
+      - xf86-video-vesa
+      - xf86-video-dummy
+      - xf86-video-qxl
+
+    # services
+    svc_core:
+      - cockpit.socket
+      - glances-web
+      - grub-btrfsd
+      - jellyfin
+      - nginx
+      - qbittorrent-nox
+      - ufw
+
+    svc_bare_metal:
+      - cpupower
+
+    # ssl
+    ssl_cert_dir: "/etc/ssl/private"
+
+    # wallpaper
+    wallpaper_svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1920 1080'><rect width='100%' height='100%' fill='#0c0d0e'/><g opacity='.04' stroke='#fff'><path d='M0 200h1920M0 400h1920M0 600h1920M0 800h1920'/></g><polygon points='960,220 1240,760 680,760' fill='#1793d1'/><polygon points='960,300 1180,720 740,720' fill='#1c1c1c'/><polygon points='960,220 1240,760 680,760' fill='none' stroke='#1793d1' stroke-width='6' opacity='.25'/><text x='960' y='820' text-anchor='middle' fill='#fff' font-family='monospace' font-size='42' letter-spacing='6' opacity='.85'>ZEnITH</text><text x='960' y='860' text-anchor='middle' fill='#1793d1' font-family='monospace' font-size='16' opacity='.7'>Arch Media Station</text></svg>"
+
+    # computed
     root_password_hash: "{{ root_password | password_hash('sha512') }}"
     user_password_hash: "{{ user_password | password_hash('sha512') }}"
+    pkg_state: "{{ 'latest' if update_system_packages | default(false) | bool else 'present' }}"
+    reboot_timeout: 180
 
-    # -----------------------------
-    # Archinstall Custom Commands
-    # -----------------------------
-    archinstall_custom_commands:
-      # SSH: allow root login only if root_password is set
-      - '{{ ''sed -i "s/^#PermitRootLogin .*/PermitRootLogin yes/" /etc/ssh/sshd_config''
-        if root_password | length > 0 else '''' }}'
-      # Enable essential services
-      - "systemctl enable sshd ufw"
-      # Enable NetworkManager if using nm or nm_iwd
-      - "{{ 'systemctl enable NetworkManager' if network_type in ['nm','nm_iwd'] else '' }}"
-      # Enable iwd if using nm_iwd combo
-      - "{{ 'systemctl enable iwd' if network_type == 'nm_iwd' else '' }}"
+    archinstall_custom_commands: >-
+      {{
+        ([] if not root_password else ['sed -i "s/^#PermitRootLogin .*/PermitRootLogin yes/" /etc/ssh/sshd_config'])
+        + ['systemctl enable sshd ufw']
+        + (['systemctl enable NetworkManager'] if network_type in ['nm','nm_iwd'] else [])
+        + (['systemctl enable iwd'] if network_type == 'nm_iwd' else [])
+      }}
 
-  # -------------------------------------------------------------------------
-  # Pre-tasks
-  # -------------------------------------------------------------------------
+  # · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
   pre_tasks:
-    - name: Detect virtualization type
+    - name: Assemble
       set_fact:
         is_vm: "{{ ansible_facts.virtualization_type in ['kvm','vmware','virtualbox','qemu','hyperv'] }}"
+        packages: >-
+          {{
+            (pkg_core + pkg_network)
+            + (pkg_cli                           if enable_extras    | bool else [])
+            + (pkg_bare_metal                    if not is_vm        | bool else [])
+            + (pkg_graphical + pkg_drivers       if enable_graphical | bool else [])
+            + pkg_extra
+            | unique
+          }}
+        svc_core: >-
+          {{
+            svc_core
+            + (svc_bare_metal               if not is_vm        | bool else [])
+          }}
 
-    - name: Merge bare metal packages/services (only on physical machines)
-      set_fact:
-        packages: "{{ (packages | default([])) + (bare_metal_packages | default([])) }}"
-        system_services: "{{ (system_services | default([])) + (bare_metal_services | default([])) }}"
-      when: not is_vm
-
+  # · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
   tasks:
-    - name: Inform user about execute_system_installation variable and pause
+    # install
+    - name: Warn if installation flag not set
       pause:
         seconds: 3
-        prompt: |
-          [!] execute_system_installation flag not set.
-          Run with '-e execute_system_installation=1' to run the installation.
-          Continuing...
+        prompt: "[!] Pass -e execute_system_installation=1 for first-time install. Continuing as maintenance run..."
       when: not execute_system_installation | default(false) | bool
 
     - name: Run system installation
       when: execute_system_installation | default(false) | bool
       block:
-        - name: Copy Archinstall config.json (Garuda-style)
+        - name: Write archinstall config.json
           copy:
             dest: /tmp/config.json
             mode: "0600"
@@ -335,71 +268,54 @@
                   "config_type": "default_layout",
                   "encryption": "{{ disk_encryption_type }}",
                   "btrfs_options": {"snapshot_config": null, "compress": "zstd"},
-                  "device_modifications": [
-                    {
-                      "device": "{{ disk_device }}",
-                      "wipe": true,
-                      "partitions": [
-                        {
-                          "dev_path": null,
-                          "flags": ["boot","esp"],
-                          "fs_type": "fat32",
-                          "mountpoint": "/boot",
-                          "mount_options": [],
-                          "btrfs": [],
-                          "obj_id": "{{ lookup('pipe','uuidgen') }}",
-                          "start": {"sector_size": {"unit": "B","value": 512},"unit": "MiB","value": 1},
-                          "size": {"sector_size": {"unit": "B","value": 512},"unit": "GiB","value": 1},
-                          "status": "create",
-                          "type": "primary"
-                        },
-                        {
-                          "dev_path": null,
-                          "flags": [],
-                          "fs_type": "btrfs",
-                          "mountpoint": null,
-                          "mount_options": ["compress=zstd","noatime"],
-                          "btrfs": [
-                            {"name": "root","mountpoint": "/"},
-                            {"name": "home","mountpoint": "/home"},
-                            {"name": "cache","mountpoint": "/var/cache"},
-                            {"name": "log","mountpoint": "/var/log"}
-                          ],
-                          "obj_id": "{{ lookup('pipe','uuidgen') }}",
-                          "start": {"sector_size": {"unit": "B","value": 512},"unit": "B","value": 1074790400},
-                          "size": {"sector_size": {"unit": "B","value": 512},"unit": "B","value": {{ root_partition_size | human_to_bytes }}},
-                          "status": "create",
-                          "type": "primary"
-                        }
-                      ]
-                    }
-                  ]
+                  "device_modifications": [{
+                    "device": "{{ disk_device }}", "wipe": true,
+                    "partitions": [
+                      {"dev_path": null, "flags": ["boot","esp"], "fs_type": "fat32",
+                       "mountpoint": "/boot", "mount_options": [], "btrfs": [],
+                       "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                       "start": {"sector_size": {"unit":"B","value":512},"unit":"MiB","value":1},
+                       "size":  {"sector_size": {"unit":"B","value":512},"unit":"GiB","value":1},
+                       "status": "create", "type": "primary"},
+                      {"dev_path": null, "flags": [], "fs_type": "btrfs",
+                       "mountpoint": null, "mount_options": ["compress=zstd","noatime"],
+                       "btrfs": [
+                         {"name":"root","mountpoint":"/"},
+                         {"name":"home","mountpoint":"/home"},
+                         {"name":"cache","mountpoint":"/var/cache"},
+                         {"name":"log","mountpoint":"/var/log"}
+                       ],
+                       "obj_id": "{{ lookup('pipe','uuidgen') }}",
+                       "start": {"sector_size": {"unit":"B","value":512},"unit":"B","value":1074790400},
+                       "size":  {"sector_size": {"unit":"B","value":512},"unit":"B","value":{{ root_partition_size | human_to_bytes }}},
+                       "status": "create", "type": "primary"}
+                    ]
+                  }]
                 },
                 "hostname": "{{ hostname }}",
                 "kernels": ["{{ kernel }}"],
-                "locale_config": {"kb_layout": "us","sys_enc": "UTF-8","sys_lang": "en_US.UTF-8"},
-                "mirror_config": {"custom_repositories": [],"custom_servers": [],"mirror_regions": {},"optional_repositories": []},
+                "locale_config": {"kb_layout":"us","sys_enc":"UTF-8","sys_lang":"en_US.UTF-8"},
+                "mirror_config": {"custom_repositories":[],"custom_servers":[],"mirror_regions":{},"optional_repositories":[]},
                 "ntp": {{ ntp_enabled | lower }},
                 "packages": {{ packages | to_json }},
                 "parallel_downloads": {{ parallel_downloads }},
                 "profile_config": {
                   "gfx_driver": "{{ profile_gfx_driver }}",
                   "greeter": {{ profile_greeter | to_json }},
-                  "profile": {"custom_settings": {{ profile_custom_settings | to_json }},"details": {{ profile_details | to_json }},"main": "{{ profile_main }}"}
+                  "profile": {"custom_settings": {{ profile_custom_settings | to_json }}, "details": {{ profile_details | to_json }}, "main": "{{ profile_main }}"}
                 }
                 {%- if network_type in ["nm","nm_iwd"] %}
                 ,"network_config": {"type": "{{ network_type }}"}
                 {%- elif network_type == "manual" %}
-                ,"network_config": {"type": "manual","nics": {{ manual_nics | to_json }}}
+                ,"network_config": {"type": "manual", "nics": {{ manual_nics | to_json }}}
                 {%- endif %},
-                "script": null,
-                "services": [],
-                "swap": {"algorithm": "zstd","enabled": true},
+                "script": null, "services": [],
+                "swap": {"algorithm": "zstd", "enabled": true},
                 "timezone": "{{ timezone }}",
                 "version": "3.0.15"
               }
 
-        - name: Copy Archinstall creds.json
+        - name: Write archinstall creds.json
           copy:
             dest: /tmp/creds.json
             mode: "0600"
@@ -409,136 +325,112 @@
                 "encryption_password": "{{ disk_encryption_password }}",
               {%- endif %}
                 "root_enc_password": "{{ root_password_hash }}",
-                "users": [{"username": "{{ user_name }}","enc_password": "{{ user_password_hash }}","sudo": true}]
+                "users": [{"username":"{{ user_name }}","enc_password":"{{ user_password_hash }}","sudo":true}]
               }
 
-        - name: Show SSH command to follow Archinstall logs
+        - name: Show log tail command
           debug:
-            msg: "Run: ssh {{ ansible_ssh_common_args }} {{ ansible_user }}@{{ inventory_hostname }} 'tail -f /var/log/archinstall/*.txt /var/log/archinstall/*.log'"
+            msg: "ssh {{ ansible_ssh_common_args }} {{ ansible_user }}@{{ inventory_hostname }} 'tail -f /var/log/archinstall/*.log'"
 
-        - name: Install Arch Linux base system (synchronous)
+        - name: Install Arch Linux
           command: archinstall --config /tmp/config.json --creds /tmp/creds.json --silent
 
-        - name: Reboot system (ignore if SSH lost)
+        - name: Reboot after install
           reboot:
-            reboot_timeout: 60
+            reboot_timeout: "{{ reboot_timeout }}"
           ignore_unreachable: true
 
-        - name: Ask for new IP if needed
+        - name: Prompt for new IP if changed
           pause:
-            prompt: "Enter new IP of {{ inventory_hostname }} (press Enter if unchanged)"
+            prompt: "New IP for {{ inventory_hostname }}? (Enter to keep current)"
           register: new_ip_input
 
-        - name: Override Ansible host for the rest of the playbook
+        - name: Apply new IP if provided
           set_fact:
             ansible_host: "{{ new_ip_input.user_input | default(ansible_host | default(inventory_hostname), true) }}"
 
-        - name: Re-gather facts after reboot and possible IP change
+        - name: Re-gather facts
           setup:
-    # End of installation
 
-
-    - name: Make sure packages are installed
+    # packages
+    - name: Ensure packages are installed
       pacman:
         name: "{{ packages }}"
-        state: "{{ 'latest' if (update_system_packages | default(false)) else 'present' }}"
+        state: "{{ pkg_state }}"
         update_cache: true
         extra_args: --needed
-      notify: reload system services
 
-    - name: Configure Snapper root snapshots
-      block:
-        - name: Create snapper root config
-          command: snapper -c root create-config /
-          args:
-            creates: /etc/snapper/configs/root
-          notify: regenerate grub config
+    # snapper
+    - name: Create snapper root config
+      command: snapper -c root create-config /
+      args:
+        creates: /etc/snapper/configs/root
+      notify: regenerate grub config
 
-        - name: Configure snapper
-          lineinfile:
-            path: /etc/snapper/configs/root
-            regexp: "{{ item.regexp }}"
-            line: "{{ item.line }}"
-          loop:
-            - regexp: "^TIMELINE_CREATE="
-              line: "TIMELINE_CREATE='no'"
-            - regexp: "^NUMBER_LIMIT="
-              line: "NUMBER_LIMIT='{{ snapshot_limit }}'"
-            - regexp: "^NUMBER_LIMIT_IMPORTANT="
-              line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'"
-              notify: regenerate grub config
+    - name: Configure snapper
+      lineinfile:
+        path: /etc/snapper/configs/root
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: "^TIMELINE_CREATE=", line: "TIMELINE_CREATE='no'" }
+        - {
+            regexp: "^NUMBER_LIMIT=",
+            line: "NUMBER_LIMIT='{{ snapshot_limit }}'",
+          }
+        - {
+            regexp: "^NUMBER_LIMIT_IMPORTANT=",
+            line: "NUMBER_LIMIT_IMPORTANT='{{ snapshot_important_limit }}'",
+          }
 
-        - name: Configure /media and Jellyfin access
-          block:
-            - name: Ensure /media exists
-              file:
-                path: /media
-                state: directory
-                owner: "{{ user_name }}"
-                group: "{{ user_name }}"
-                mode: "0755"
+    # media
+    - name: Ensure /media exists with correct ownership
+      file:
+        path: /media
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
 
-            - name: Mount secondary disk at /media (if specified)
-              mount:
-                path: /media
-                src: "UUID={{ secondary_disk_uuid }}"
-                fstype: "{{ secondary_disk_fs }}"
-                opts: "{{ secondary_disk_opts }}"
-                state: mounted
-              when: secondary_disk_uuid | length > 0
+    - name: Mount secondary disk at /media
+      mount:
+        path: /media
+        src: "UUID={{ secondary_disk_uuid }}"
+        fstype: "{{ secondary_disk_fs }}"
+        opts: "{{ secondary_disk_opts }}"
+        state: mounted
+      when: secondary_disk_uuid | length > 0
 
-            - name: Set directory permissions to 755
-              find:
-                paths: /media
-                file_type: directory
-              register: media_dirs
-            - file:
-                path: "{{ item.path }}"
-                mode: "0755"
-              loop: "{{ media_dirs.files }}"
+    - name: Set Jellyfin ACL on /media (current and default for new files)
+      acl:
+        path: /media
+        entity: jellyfin
+        etype: group
+        permissions: rx
+        recurse: "{{ item.recurse }}"
+        default: "{{ item.default }}"
+        state: present
+      loop:
+        - { recurse: true, default: false }
+        - { recurse: false, default: true }
 
-            - name: Set file permissions to 644
-              find:
-                paths: /media
-                file_type: file
-              register: media_files
-            - file:
-                path: "{{ item.path }}"
-                mode: "0644"
-              loop: "{{ media_files.files }}"
-
-            - name: Ensure existing /media files/dirs are readable by jellyfin
-              acl:
-                path: /media
-                entity: jellyfin
-                etype: group
-                permissions: rx
-                recurse: yes
-                state: present
-
-            - name: Set default ACL for future files/dirs
-              acl:
-                path: /media
-                entity: jellyfin
-                etype: group
-                permissions: rx
-                default: yes
-                state: present
-
+    # cpu governor
     - name: Set CPU governor to performance
       lineinfile:
         path: /etc/default/cpupower-service.conf
         regexp: "^#?GOVERNOR="
         line: "GOVERNOR='performance'"
         create: true
+      when: not is_vm
 
-    - name: Ensure qBittorrent service override directory exists
+    # qbittorrent
+    - name: Ensure qBittorrent service override directory
       file:
         path: /etc/systemd/system/qbittorrent-nox.service.d
         state: directory
         mode: "0755"
 
-    - name: Configure qbittorrent service override
+    - name: Configure qBittorrent service user
       copy:
         dest: /etc/systemd/system/qbittorrent-nox.service.d/override.conf
         mode: "0644"
@@ -547,115 +439,121 @@
           User={{ user_name }}
       notify: restart qbittorrent
 
-    - name: Configure Cockpit to serve under /admin
+    # cockpit
+    - name: Configure Cockpit under /admin
       copy:
         dest: /etc/cockpit/cockpit.conf
         mode: "0644"
         content: |
           [WebService]
-          # Origins = http://{{ hostname }} https://{{ hostname }} wss://{{ hostname }}
           Origins = *
           ProtocolHeader = X-Forwarded-Proto
           UrlRoot=/admin
       notify: restart cockpit
 
-    - name: Configure UFW rules for profiles
+    # firewall
+    - name: Allow UFW profiles
       ufw:
         rule: allow
         name: "{{ item }}"
       loop: "{{ ufw_profiles }}"
-      notify: restart ufw
 
-    - name: Configure UFW rules for ports
+    - name: Allow UFW ports
       ufw:
         rule: allow
         port: "{{ item.split('/')[0] }}"
         proto: "{{ item.split('/')[1] }}"
       loop: "{{ ufw_ports }}"
-      notify: restart ufw
 
     - name: Enable UFW
-      ufw: { state: enabled }
+      ufw:
+        state: enabled
+      notify: restart ufw
 
-    - name: Ensure SSL certificate/key exist and are trusted
-      block:
+    # ssl
+    - name: Ensure SSL directory
+      file:
+        path: "{{ ssl_cert_dir }}"
+        state: directory
+        mode: "0700"
 
-        - name: Ensure SSL directory exists
-          file:
-            path: "{{ ssl_cert_dir }}"
-            state: directory
-            owner: root
-            group: root
-            mode: "0700"
+    - name: Copy user-provided SSL files
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        remote_src: false
+      loop:
+        - {
+            src: "{{ ssl_cert_src }}",
+            dest: "{{ ssl_cert_dir }}/{{ hostname }}.crt",
+            mode: "0644",
+          }
+        - {
+            src: "{{ ssl_key_src }}",
+            dest: "{{ ssl_cert_dir }}/{{ hostname }}.key",
+            mode: "0600",
+          }
+        - {
+            src: "{{ ssl_ca_src }}",
+            dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt",
+            mode: "0644",
+          }
+        - {
+            src: "{{ ssl_ca_key_src }}",
+            dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.key",
+            mode: "0600",
+          }
+      when: item.src | length > 0
 
-        - name: Copy custom SSL certificate/key if provided
-          copy:
-            src: "{{ item.src }}"
-            dest: "{{ item.dest }}"
-            owner: root
-            group: root
-            mode: "{{ item.mode }}"
-          loop:
-            - { src: "{{ ssl_cert_src | default('') }}", dest: "{{ ssl_cert_dir }}/{{ hostname }}.crt", mode: "0644" }
-            - { src: "{{ ssl_key_src | default('') }}", dest: "{{ ssl_cert_dir }}/{{ hostname }}.key", mode: "0600" }
-            - { src: "{{ ssl_ca_src | default('') }}", dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt", mode: "0644" }
-            - { src: "{{ ssl_ca_key_src | default('') }}", dest: "{{ ssl_cert_dir }}/{{ hostname }}-ca.key", mode: "0600" }
-          when: item.src | length > 0
+    - name: Generate local CA if missing
+      command: >
+        openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-384
+        -keyout "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
+        -out "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+        -days 3650 -subj "{{ ssl_subject }}/CN={{ hostname }} CA"
+        -addext "basicConstraints=CA:TRUE,pathlen:0"
+        -addext "keyUsage=keyCertSign,cRLSign"
+      args:
+        creates: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
 
-        - name: Generate local CA key and certificate if missing
-          command: >
-            openssl req -x509 -nodes -newkey rsa:4096
-            -keyout "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
-            -out "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
-            -days 3650
-            -subj "{{ ssl_subject }}/CN={{ hostname }} CA"
-            -addext "basicConstraints=CA:TRUE,pathlen:0"
-            -addext "keyUsage=keyCertSign,cRLSign"
-          args:
-            creates: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+    - name: Generate host certificate if missing
+      command: >
+        openssl req -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-384
+        -keyout "{{ ssl_cert_dir }}/{{ hostname }}.key"
+        -out "{{ ssl_cert_dir }}/{{ hostname }}.crt"
+        -days 3650 -sha256 -subj "{{ ssl_subject }}/CN={{ hostname }}"
+        -CA "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+        -CAkey "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
+        -CAcreateserial
+        -addext "basicConstraints=CA:FALSE"
+        -addext "keyUsage=digitalSignature,keyEncipherment"
+        -addext "extendedKeyUsage=serverAuth,clientAuth"
+        -addext "subjectAltName=DNS:{{ hostname }}"
+      args:
+        creates: "{{ ssl_cert_dir }}/{{ hostname }}.crt"
+      notify: restart nginx
 
-        - name: Generate host certificate and key signed by local CA if missing
-          command: >
-            openssl req -new -nodes -newkey rsa:4096
-            -keyout "{{ ssl_cert_dir }}/{{ hostname }}.key"
-            -out "{{ ssl_cert_dir }}/{{ hostname }}.crt"
-            -days 3650 -sha256
-            -subj "{{ ssl_subject }}/CN={{ hostname }}"
-            -CA "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
-            -CAkey "{{ ssl_cert_dir }}/{{ hostname }}-ca.key"
-            -set_serial 01
-            -addext "basicConstraints=CA:FALSE"
-            -addext "keyUsage=digitalSignature,keyEncipherment"
-            -addext "extendedKeyUsage=serverAuth,clientAuth"
-            -addext "subjectAltName=DNS:{{ hostname }}"
-          args:
-            creates: "{{ ssl_cert_dir }}/{{ hostname }}.crt"
-          notify: restart nginx
+    - name: Trust local CA
+      copy:
+        src: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
+        dest: "/etc/ca-certificates/trust-source/anchors/{{ hostname }}-ca.crt"
+        mode: "0644"
+        remote_src: true
+      notify: update ca trust
 
-        - name: Trust local CA on host
-          copy:
-            src: "{{ ssl_cert_dir }}/{{ hostname }}-ca.crt"
-            dest: "/etc/ca-certificates/trust-source/anchors/{{ hostname }}-ca.crt"
-            owner: root
-            group: root
-            mode: "0644"
-            remote_src: yes
-          notify: Update system CA certificates
-
-    - name: Create web root directory
+    # nginx
+    - name: Ensure web root
       file:
         path: /var/www/html
         state: directory
-        owner: root
-        group: root
         mode: "0755"
-      notify: restart nginx
 
-    - name: Deploy AMS dashboard and SVG assets
+    - name: Deploy AMS dashboard
       copy:
+        dest: "{{ item.dest }}"
         mode: "0644"
         content: "{{ item.content }}"
-        dest: "{{ item.dest }}"
       loop:
         - dest: /var/www/html/index.html
           content: |
@@ -681,7 +579,7 @@
               <text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="monospace" font-size="48" font-weight="bold">Z</text>
             </svg>
 
-    - name: Deploy nginx configuration
+    - name: Deploy nginx config
       copy:
         dest: /etc/nginx/nginx.conf
         mode: "0644"
@@ -689,15 +587,13 @@
           worker_processes auto;
           events { worker_connections 1024; }
           http {
-            upstream cockpit { server 127.0.0.1:9090; }
-            upstream jellyfin { server 127.0.0.1:8096; }
+            upstream cockpit     { server 127.0.0.1:9090; }
+            upstream jellyfin    { server 127.0.0.1:8096; }
             upstream qbittorrent { server 127.0.0.1:8080; }
-            upstream glances { server 127.0.0.1:61208; }
+            upstream glances     { server 127.0.0.1:61208; }
             include mime.types;
             default_type application/octet-stream;
-            sendfile on;
-            keepalive_timeout 65;
-            server_tokens off;
+            sendfile on; keepalive_timeout 65; server_tokens off;
             server {
               listen 80 default_server;
               server_name {{ hostname }};
@@ -706,50 +602,36 @@
             server {
               listen 443 ssl default_server;
               server_name {{ hostname }};
-              ssl_certificate {{ ssl_cert_dir }}/{{ hostname }}.crt;
+              ssl_certificate     {{ ssl_cert_dir }}/{{ hostname }}.crt;
               ssl_certificate_key {{ ssl_cert_dir }}/{{ hostname }}.key;
               ssl_protocols TLSv1.2 TLSv1.3;
-              ssl_session_cache shared:SSL:10m;
-              ssl_session_timeout 10m;
-              ssl_prefer_server_ciphers on;
-              ssl_session_tickets off;
+              ssl_session_cache shared:SSL:10m; ssl_session_timeout 10m;
+              ssl_prefer_server_ciphers on; ssl_session_tickets off;
               proxy_request_buffering off;
-              set $proxy_headers '';
               proxy_set_header Host $host;
               proxy_set_header X-Real-IP $remote_addr;
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
               proxy_set_header X-Forwarded-Proto $scheme;
               proxy_set_header X-Forwarded-Protocol $scheme;
               proxy_set_header X-Forwarded-Host $http_host;
-              # AMS dashboard
               location = /favicon.svg { alias /var/www/html/favicon.svg; }
-              location /ams { alias /var/www/html/; index index.html; }
-              # Redirect to Jellyfin web UI
-              location = / { return 302 https://$host/web/; }
-              # Jellyfin main backend
-              location / { proxy_pass http://jellyfin; proxy_buffering off; }
-              # Jellyfin web interface
-              location = /web/ { proxy_pass http://jellyfin/web/index.html; }
-              # Jellyfin websocket
+              location /ams          { alias /var/www/html/; index index.html; }
+              location = /           { return 302 https://$host/web/; }
+              location /             { proxy_pass http://jellyfin; proxy_buffering off; }
+              location = /web/       { proxy_pass http://jellyfin/web/index.html; }
               location /socket {
                 proxy_pass http://jellyfin;
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
               }
-              # qBittorrent WebUI
               location /torrent/ { proxy_pass http://qbittorrent/; }
-              # Cockpit admin panel
               location /admin/ {
                 proxy_pass http://cockpit/admin/;
-                proxy_ssl_verify off;
-                proxy_http_version 1.1;
-                proxy_buffering off;
+                proxy_ssl_verify off; proxy_http_version 1.1; proxy_buffering off; gzip off;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
-                gzip off;
               }
-              # Glances system stats
               location /stats/ {
                 proxy_pass http://glances/;
                 proxy_http_version 1.1;
@@ -760,181 +642,127 @@
           }
       notify: restart nginx
 
-    - name: Test nginx configuration
+    - name: Validate nginx config
       command: nginx -t
-      register: nginx_test
       changed_when: false
-      failed_when: nginx_test.rc != 0
 
-    - name: Deploy AMS update system
-      block:
-        - name: Deploy ams-update script
-          copy:
-            dest: /usr/local/bin/ams-update
-            owner: root
-            group: root
-            mode: "0755"
-            content: |
-              #!/bin/sh
-              set -eu
-              LOG={{ update_log_file }}
+    # auto-update
+    - name: Deploy ams-update script
+      copy:
+        dest: /usr/local/bin/ams-update
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          set -eu
+          LOG="/var/log/ams-update.log"
+          { echo "[$(date '+%F %T')] AMS update started"
+            pacman -Syu --noconfirm || true
+            pacman -Qdtq 2>/dev/null | xargs -r pacman -Rns --noconfirm || true
+            echo "[$(date '+%F %T')] AMS update finished"
+          } 2>&1 | tee -a "$LOG"
 
-              {
-              echo "[$(date '+%F %T')] AMS update started"
-              pacman -Syu --noconfirm || true
-              pacman -Qdtq 2>/dev/null | xargs pacman -Rns --noconfirm || true
-              echo "[$(date '+%F %T')] AMS update finished"
-              } 2>&1 | tee -a "$LOG"
+    - name: Deploy ams-update systemd units
+      copy:
+        dest: "{{ item.dest }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - dest: /etc/systemd/system/ams-update.service
+          content: |
+            [Unit]
+            Description=AMS Automatic Update
+            After=network.target
+            [Service]
+            Type=oneshot
+            ExecStart=/usr/local/bin/ams-update
+        - dest: /etc/systemd/system/ams-update.timer
+          content: |
+            [Unit]
+            Description=Run AMS update daily
+            [Timer]
+            OnCalendar=daily
+            Persistent=true
+            [Install]
+            WantedBy=timers.target
 
-        - name: Create AMS update systemd service
-          copy:
-            dest: /etc/systemd/system/ams-update.service
-            mode: "0644"
-            owner: root
-            group: root
-            content: |
-              [Unit]
-              Description=AMS Automatic Update Service
-              After=network.target
+    - name: Manage ams-update timer
+      systemd:
+        name: ams-update.timer
+        daemon_reload: true
+        state: "{{ 'started' if enable_automatic_updates | bool else 'stopped' }}"
+        enabled: "{{ enable_automatic_updates | bool }}"
 
-              [Service]
-              Type=oneshot
-              ExecStart=/usr/local/bin/ams-update
-              StandardOutput=journal
-              StandardError=journal
+    # tmux
+    - name: Configure system-wide tmux
+      copy:
+        dest: /etc/tmux.conf
+        mode: "0644"
+        content: |
+          set -g history-limit 999999
+          set -g mouse on
+          set -g default-terminal "tmux-256color"
+          set -g status-bg cyan
+          set -g status-fg black
 
-        - name: Create AMS update systemd timer
-          copy:
-            dest: /etc/systemd/system/ams-update.timer
-            mode: "0644"
-            owner: root
-            group: root
-            content: |
-              [Unit]
-              Description=Run AMS update daily
-
-              [Timer]
-              OnCalendar=daily
-              Persistent=true
-
-              [Install]
-              WantedBy=timers.target
-
-        - name: Reload systemd and enable timer if automatic updates enabled
-          systemd:
-            daemon_reload: true
-            name: ams-update.timer
-            state: "{{ 'started' if enable_automatic_updates | bool else 'stopped' }}"
-            enabled: "{{ enable_automatic_updates | bool }}"
-
-        - name: Configure system-wide tmux
-          copy:
-            dest: /etc/tmux.conf
-            owner: root
-            group: root
-            mode: "0644"
-            content: |
-              # Terminal
-              set -g history-limit 999999
-              set -g mouse on
-              # Colors
-              set -g default-terminal "tmux-256color"
-              set -g status-bg cyan
-              set -g status-fg black
-
-    - name: Deploy minimal RCs and default user-editable aliases
+    # shell
+    - name: Deploy shell configs
       copy:
         dest: "{{ item.dest }}"
         owner: "{{ user_name }}"
         group: "{{ user_name }}"
-        mode: "{{ item.mode }}"
+        mode: "0644"
         content: "{{ item.content }}"
         force: "{{ item.force | default(true) }}"
       loop:
         - dest: "/home/{{ user_name }}/.bash_aliases"
-          mode: "0644"
           force: false
           content: |
-            alias ll='ls -alF'
-            alias la='ls -A'
-            alias l='ls -CF'
-            alias c='clear'
-            alias h='history'
-            alias gs='git status'
-            alias gc='git commit'
-            alias gp='git push'
+            alias ll='ls -alF' la='ls -A' l='ls -CF' c='clear' h='history'
+            alias gs='git status' gc='git commit' gp='git push'
             alias aliases="${EDITOR:-nano} $HOME/.bash_aliases"
         - dest: "/home/{{ user_name }}/.bashrc"
-          mode: "0644"
           content: |
             [[ $- != *i* ]] && return
-            HISTSIZE=1000
-            HISTFILESIZE=2000
-            HISTCONTROL=ignoreboth:erasedups
+            HISTSIZE=1000; HISTFILESIZE=2000; HISTCONTROL=ignoreboth:erasedups
             shopt -s histappend checkwinsize
             [ -f "$HOME/.bash_aliases" ] && . "$HOME/.bash_aliases"
             export PS1='\[\033[1;32m\][\[\033[1;37m\]\t\[\033[1;32m\]]\[\033[0m\] \[\033[1;37m\]\u\[\033[0m\]@\[\033[1;36m\]\H\[\033[0m\] \[\033[1;90m\]\w\[\033[0m\] \[$(if [ $? -eq 0 ]; then echo "\033[1;32m[✔]\033[0m"; else echo "\033[1;31m[✘]\033[0m"; fi)\] \$ '
         - dest: "/home/{{ user_name }}/.zsh_aliases"
-          mode: "0644"
           force: false
           content: |
-            alias ls='ls --color=auto'
-            alias ll='ls -alF'
-            alias la='ls -A'
-            alias l='ls -CF'
-            alias c='clear'
-            alias h='history'
-            alias gs='git status'
-            alias gc='git commit'
-            alias gp='git push'
+            alias ls='ls --color=auto' ll='ls -alF' la='ls -A' l='ls -CF' c='clear' h='history'
+            alias gs='git status' gc='git commit' gp='git push'
             alias aliases="${EDITOR:-nano} $HOME/.zsh_aliases"
         - dest: "/home/{{ user_name }}/.zshrc"
-          mode: "0644"
           content: |-
             {% raw %}
             [[ $- != *i* ]] && return
             autoload -U colors && colors
-            HISTSIZE=1000
-            SAVEHIST=2000
+            HISTSIZE=1000; SAVEHIST=2000
             setopt hist_ignore_all_dups share_history auto_cd auto_pushd correct notify prompt_subst
             [ -f "$HOME/.zsh_aliases" ] && . "$HOME/.zsh_aliases"
             PROMPT='%{%F{green}%}[%{%F{white}%}%*%{%F{green}%}]%{%f%} %{%F{white}%}%n%{%f%}@%{%F{cyan}%}%m%{%f%} %{%F{black}%}%~%{%f%} $(if [[ $? -eq 0 ]]; then echo "%{%F{green}%}[✔]%{%f%}"; else echo "%{%F{red}%}[✘]%{%f%}"; fi) \$ '
             {% endraw %}
 
+    # graphical
     - name: Configure graphical environment
+      when: enable_graphical
       block:
-        - name: Install Xorg, Openbox, and GUI applications
-          pacman:
-            name: "{{ graphical_packages + graphical_drivers }}"
-            state: present
-            update_cache: yes
-            extra_args: --needed
-
         - name: Add user to graphical groups
           user:
             name: "{{ user_name }}"
-            groups:
-              - video
-              - input
-              - audio
-              - render
-              - storage
-              - optical
-              - lp
+            groups: [video, input, audio, render, storage, optical, lp]
             append: true
 
-        - name: Deploy jellyfin-kiosk wrapper script
+        - name: Deploy jellyfin-kiosk wrapper
           copy:
             dest: /usr/local/bin/jellyfin-kiosk
-            owner: root
-            group: root
             mode: "0755"
             content: |
               #!/bin/sh
-              HOST=$(hostnamectl --transient)
-              exec firefox --kiosk "https://${HOST}/web/"
+              exec firefox --kiosk "https://$(hostnamectl --transient)/web/"
 
-        - name: Create .xinitrc for {{ user_name }}
+        - name: Deploy .xinitrc
           copy:
             dest: "/home/{{ user_name }}/.xinitrc"
             owner: "{{ user_name }}"
@@ -945,67 +773,74 @@
               xset s off
               exec openbox-session
 
-        - name: Add startx on tty1 login to .bash_profile for {{ user_name }}
+        - name: Add startx on tty1 to .bash_profile
           blockinfile:
             dest: "/home/{{ user_name }}/.bash_profile"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
             mode: "0644"
+            create: true
             block: |
-              if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then
-                  startx
-              fi
+              if [[ -z $DISPLAY ]] && [[ $(tty) = /dev/tty1 ]]; then startx; fi
 
-        - name: Ensure Openbox directories exist
+        - name: Ensure config directories exist
           file:
             path: "{{ item }}"
             state: directory
             mode: "0755"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
           loop:
             - /usr/share/backgrounds
-            - /etc/xdg/openbox
+            - "/home/{{ user_name }}/.config/openbox"
+            - "/home/{{ user_name }}/.config/rofi"
 
-        - name: Deploy ZEnITH wallpaper
+        - name: Deploy wallpaper
           copy:
             dest: /usr/share/backgrounds/zenith-wallpaper.svg
             content: "{{ wallpaper_svg }}"
             mode: "0644"
 
-        - name: Configure Openbox autostart
+        - name: Deploy Openbox autostart
           copy:
-            dest: /etc/xdg/openbox/autostart
+            dest: "/home/{{ user_name }}/.config/openbox/autostart"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
             mode: "0644"
             content: |
               {% for p in openbox_autostart_programs if p is defined %}
               {{ p }}
               {% endfor %}
 
-        - name: Deploy Openbox configuration files
+        - name: Deploy graphical config files
           copy:
             dest: "{{ item.dest }}"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
             mode: "0644"
             content: "{{ item.content }}"
           loop:
-            - dest: /etc/xdg/openbox/menu.xml
+            - dest: "/home/{{ user_name }}/.config/openbox/rc.xml"
               content: |
-                <?xml version="1.0" encoding="UTF-8"?><openbox_menu xmlns="http://openbox.org/3.4/menu"><menu id="root-menu" label="Openbox 3"><menu id="apps" label="Applications"><item label="Terminal [Win+T]"><action name="Execute"><command>xterm</command></action></item><item label="Web Browser [Win+W]"><action name="Execute"><command>firefox</command></action></item><menu id="media" label="Media"><item label="Jellyfin [Win+J]"><action name="Execute"><command>jellyfin-kiosk</command></action></item></menu><item label="File Manager [Win+E]"><action name="Execute"><command>doublecmd</command></action></item><item label="Task Manager [Ctrl+Shift+ESC]"><action name="Execute"><command>qps</command></action></item></menu><separator/><menu id="system" label="System"><item label="Restart Openbox"><action name="Restart"/></item><item label="Exit"><action name="Exit"/></item></menu></menu></openbox_menu>
-
-            - dest: /etc/xdg/openbox/rc.xml
+                <?xml version="1.0" encoding="UTF-8"?><openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude"><resistance><strength>10</strength><screen_edge_strength>20</screen_edge_strength></resistance><focus><focusNew>yes</focusNew><followMouse>no</followMouse><focusLast>yes</focusLast><underMouse>no</underMouse><focusDelay>200</focusDelay><raiseOnFocus>no</raiseOnFocus></focus><placement><policy>Smart</policy><center>yes</center><monitor>Primary</monitor><primaryMonitor>1</primaryMonitor></placement><theme><n>Natura</n><titleLayout>NLIMC</titleLayout><keepBorder>yes</keepBorder><animateIconify>yes</animateIconify><font place="ActiveWindow"><n>sans</n><size>8</size><weight>bold</weight><slant>normal</slant></font><font place="InactiveWindow"><n>sans</n><size>8</size><weight>bold</weight><slant>normal</slant></font><font place="MenuHeader"><n>sans</n><size>9</size><weight>normal</weight><slant>normal</slant></font><font place="MenuItem"><n>sans</n><size>9</size><weight>normal</weight><slant>normal</slant></font><font place="ActiveOnScreenDisplay"><n>sans</n><size>9</size><weight>bold</weight><slant>normal</slant></font><font place="InactiveOnScreenDisplay"><n>sans</n><size>9</size><weight>bold</weight><slant>normal</slant></font></theme><desktops><number>1</number><firstdesk>1</firstdesk><names><n>Main</n></names><popupTime>875</popupTime></desktops><resize><drawContents>yes</drawContents><popupShow>Nonpixel</popupShow><popupPosition>Center</popupPosition><popupFixedPosition><x>10</x><y>10</y></popupFixedPosition></resize><margins><top>0</top><bottom>0</bottom><left>0</left><right>0</right></margins><dock><position>TopLeft</position><floatingX>0</floatingX><floatingY>0</floatingY><noStrut>no</noStrut><stacking>Above</stacking><direction>Vertical</direction><autoHide>no</autoHide><hideDelay>300</hideDelay><showDelay>300</showDelay><moveButton>Middle</moveButton></dock><keyboard><chainQuitKey>C-g</chainQuitKey><keybind key="A-F4"><action name="Close"/></keybind><keybind key="W-q"><action name="Close"/></keybind><keybind key="A-Escape"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></keybind><keybind key="A-space"><action name="ShowMenu"><menu>client-menu</menu></action></keybind><keybind key="A-Tab"><action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="A-S-Tab"><action name="PreviousWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="C-A-Tab"><action name="NextWindow"><panels>yes</panels><desktop>yes</desktop><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="W-S-Right"><action name="DirectionalCycleWindows"><direction>right</direction></action></keybind><keybind key="W-S-Left"><action name="DirectionalCycleWindows"><direction>left</direction></action></keybind><keybind key="W-S-Up"><action name="DirectionalCycleWindows"><direction>up</direction></action></keybind><keybind key="W-S-Down"><action name="DirectionalCycleWindows"><direction>down</direction></action></keybind><keybind key="W-d"><action name="ToggleShowDesktop"/></keybind><keybind key="W-space"><action name="Execute"><command>rofi</command></action></keybind><keybind key="W-t"><action name="Execute"><command>xterm</command></action></keybind><keybind key="W-w"><action name="Execute"><command>firefox</command></action></keybind><keybind key="W-e"><action name="Execute"><command>doublecmd</command></action></keybind><keybind key="W-j"><action name="Execute"><command>jellyfin-kiosk</command></action></keybind><keybind key="C-S-Escape"><action name="Execute"><command>qps</command></action></keybind><keybind key="C-A-Delete"><action name="Exit"/></keybind></keyboard><mouse><dragThreshold>1</dragThreshold><doubleClickTime>200</doubleClickTime><screenEdgeWarpTime>400</screenEdgeWarpTime><screenEdgeWarpMouse>false</screenEdgeWarpMouse><context name="Frame"><mousebind button="A-Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="A-Left" action="Click"><action name="Unshade"/></mousebind><mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind><mousebind button="A-Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind><mousebind button="A-Middle" action="Press"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></mousebind></context><context name="Titlebar"><mousebind button="Left" action="Drag"><action name="Move"/></mousebind><mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind><mousebind button="Up" action="Click"><action name="if"><shaded>no</shaded><then><action name="Shade"/><action name="FocusToBottom"/><action name="Unfocus"/><action name="Lower"/></then></action></mousebind><mousebind button="Down" action="Click"><action name="if"><shaded>yes</shaded><then><action name="Unshade"/><action name="Raise"/></then></action></mousebind></context><context name="Titlebar Top Right Bottom Left TLCorner TRCorner BRCorner BLCorner"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Middle" action="Press"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="Top"><mousebind button="Left" action="Drag"><action name="Resize"><edge>top</edge></action></mousebind></context><context name="Left"><mousebind button="Left" action="Drag"><action name="Resize"><edge>left</edge></action></mousebind></context><context name="Right"><mousebind button="Left" action="Drag"><action name="Resize"><edge>right</edge></action></mousebind></context><context name="Bottom"><mousebind button="Left" action="Drag"><action name="Resize"><edge>bottom</edge></action></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="TRCorner BRCorner TLCorner BLCorner"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Drag"><action name="Resize"/></mousebind></context><context name="Client"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind></context><context name="Icon"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="AllDesktops"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleOmnipresent"/></mousebind></context><context name="Shade"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleShade"/></mousebind></context><context name="Iconify"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Left" action="Click"><action name="Iconify"/></mousebind></context><context name="Maximize"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind><mousebind button="Middle" action="Click"><action name="ToggleMaximize"><direction>vertical</direction></action></mousebind><mousebind button="Right" action="Click"><action name="ToggleMaximize"><direction>horizontal</direction></action></mousebind></context><context name="Close"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="Close"/></mousebind></context><context name="Desktop"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind></context><context name="Root"><mousebind button="Middle" action="Press"><action name="ShowMenu"><menu>client-list-combined-menu</menu></action></mousebind><mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind></context><context name="MoveResize"><mousebind button="Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind></context></mouse><menu><file>menu.xml</file><hideDelay>200</hideDelay><middle>no</middle><submenuShowDelay>100</submenuShowDelay><submenuHideDelay>400</submenuHideDelay><showIcons>yes</showIcons><manageDesktops>no</manageDesktops></menu><applications></applications></openbox_config>
+            - dest: "/home/{{ user_name }}/.config/openbox/menu.xml"
               content: |
-                <?xml version="1.0" encoding="UTF-8"?><openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude"><resistance><strength>10</strength><screen_edge_strength>20</screen_edge_strength></resistance><focus><focusNew>yes</focusNew><followMouse>no</followMouse><focusLast>yes</focusLast><underMouse>no</underMouse><focusDelay>200</focusDelay><raiseOnFocus>no</raiseOnFocus></focus><placement><policy>Smart</policy><center>yes</center><monitor>Primary</monitor><primaryMonitor>1</primaryMonitor></placement><theme><name>Natura</name><titleLayout>NLIMC</titleLayout><keepBorder>yes</keepBorder><animateIconify>yes</animateIconify><font place="ActiveWindow"><name>sans</name><size>8</size><weight>bold</weight><slant>normal</slant></font><font place="InactiveWindow"><name>sans</name><size>8</size><weight>bold</weight><slant>normal</slant></font><font place="MenuHeader"><name>sans</name><size>9</size><weight>normal</weight><slant>normal</slant></font><font place="MenuItem"><name>sans</name><size>9</size><weight>normal</weight><slant>normal</slant></font><font place="ActiveOnScreenDisplay"><name>sans</name><size>9</size><weight>bold</weight><slant>normal</slant></font><font place="InactiveOnScreenDisplay"><name>sans</name><size>9</size><weight>bold</weight><slant>normal</slant></font></theme><desktops><number>4</number><firstdesk>1</firstdesk><popupTime>875</popupTime></desktops><resize><drawContents>yes</drawContents><popupShow>Nonpixel</popupShow><popupPosition>Center</popupPosition></resize><margins><top>0</top><bottom>0</bottom><left>0</left><right>0</right></margins><dock><position>TopLeft</position><floatingX>0</floatingX><floatingY>0</floatingY><noStrut>no</noStrut><stacking>Above</stacking><direction>Vertical</direction><autoHide>no</autoHide><hideDelay>300</hideDelay><showDelay>300</showDelay><moveButton>Middle</moveButton></dock><keyboard><chainQuitKey>C-g</chainQuitKey><keybind key="C-A-Left"><action name="GoToDesktop"><to>left</to><wrap>no</wrap></action></keybind><keybind key="C-A-Right"><action name="GoToDesktop"><to>right</to><wrap>no</wrap></action></keybind><keybind key="C-A-Up"><action name="GoToDesktop"><to>up</to><wrap>no</wrap></action></keybind><keybind key="C-A-Down"><action name="GoToDesktop"><to>down</to><wrap>no</wrap></action></keybind><keybind key="S-A-Left"><action name="SendToDesktop"><to>left</to><wrap>no</wrap></action></keybind><keybind key="S-A-Right"><action name="SendToDesktop"><to>right</to><wrap>no</wrap></action></keybind><keybind key="S-A-Up"><action name="SendToDesktop"><to>up</to><wrap>no</wrap></action></keybind><keybind key="S-A-Down"><action name="SendToDesktop"><to>down</to><wrap>no</wrap></action></keybind><keybind key="W-F1"><action name="GoToDesktop"><to>1</to></action></keybind><keybind key="W-F2"><action name="GoToDesktop"><to>2</to></action></keybind><keybind key="W-F3"><action name="GoToDesktop"><to>3</to></action></keybind><keybind key="W-F4"><action name="GoToDesktop"><to>4</to></action></keybind><keybind key="W-d"><action name="ToggleShowDesktop"/></keybind><keybind key="A-F4"><action name="Close"/></keybind><keybind key="A-Escape"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></keybind><keybind key="A-space"><action name="ShowMenu"><menu>client-menu</menu></action></keybind><keybind key="A-Tab"><action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="A-S-Tab"><action name="PreviousWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="C-A-Tab"><action name="NextWindow"><panels>yes</panels><desktop>yes</desktop><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind><keybind key="W-S-Right"><action name="DirectionalCycleWindows"><direction>right</direction></action></keybind><keybind key="W-S-Left"><action name="DirectionalCycleWindows"><direction>left</direction></action></keybind><keybind key="W-S-Up"><action name="DirectionalCycleWindows"><direction>up</direction></action></keybind><keybind key="W-S-Down"><action name="DirectionalCycleWindows"><direction>down</direction></action></keybind><keybind key="W-w"><action name="Execute"><command>firefox</command></action></keybind><keybind key="W-e"><action name="Execute"><command>doublecmd</command></action></keybind><keybind key="W-j"><action name="Execute"><command>jellyfin-kiosk</command></action></keybind><keybind key="W-t"><action name="Execute"><command>xterm</command></action></keybind><keybind key="C-S-Escape"><action name="Execute"><command>qps</command></action></keybind><keybind key="W-q"><action name="Close"/></keybind><keybind key="C-A-Delete"><action name="Exit"/></keybind></keyboard><mouse><context name="Frame"><mousebind button="A-Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="A-Left" action="Click"><action name="Unshade"/></mousebind><mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind><mousebind button="A-Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind><mousebind button="A-Middle" action="Press"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></mousebind><mousebind button="A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="C-A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="C-A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="A-S-Up" action="Click"><action name="SendToDesktop"><to>previous</to></action></mousebind><mousebind button="A-S-Down" action="Click"><action name="SendToDesktop"><to>next</to></action></mousebind></context><context name="Titlebar"><mousebind button="Left" action="Drag"><action name="Move"/></mousebind><mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind><mousebind button="Up" action="Click"><action name="if"><shaded>no</shaded><then><action name="Shade"/><action name="FocusToBottom"/><action name="Unfocus"/><action name="Lower"/></then></action></mousebind><mousebind button="Down" action="Click"><action name="if"><shaded>yes</shaded><then><action name="Unshade"/><action name="Raise"/></then></action></mousebind></context><context name="Titlebar Top Right Bottom Left TLCorner TRCorner BRCorner BLCorner"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Middle" action="Press"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="Top"><mousebind button="Left" action="Drag"><action name="Resize"><edge>top</edge></action></mousebind></context><context name="Left"><mousebind button="Left" action="Drag"><action name="Resize"><edge>left</edge></action></mousebind></context><context name="Right"><mousebind button="Left" action="Drag"><action name="Resize"><edge>right</edge></action></mousebind></context><context name="Bottom"><mousebind button="Left" action="Drag"><action name="Resize"><edge>bottom</edge></action></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="TRCorner BRCorner TLCorner BLCorner"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Drag"><action name="Resize"/></mousebind></context><context name="Client"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind></context><context name="Icon"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action></mousebind></context><context name="AllDesktops"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleOmnipresent"/></mousebind></context><context name="Shade"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleShade"/></mousebind></context><context name="Iconify"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Left" action="Click"><action name="Iconify"/></mousebind></context><context name="Maximize"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind><mousebind button="Middle" action="Click"><action name="ToggleMaximize"><direction>vertical</direction></action></mousebind><mousebind button="Right" action="Click"><action name="ToggleMaximize"><direction>horizontal</direction></action></mousebind></context><context name="Close"><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind><mousebind button="Left" action="Click"><action name="Close"/></mousebind></context><context name="Desktop"><mousebind button="Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="C-A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="C-A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind><mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind></context><context name="Root"><mousebind button="Middle" action="Press"><action name="ShowMenu"><menu>client-list-combined-menu</menu></action></mousebind><mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind></context><context name="MoveResize"><mousebind button="Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind><mousebind button="A-Up" action="Click"><action name="GoToDesktop"><to>previous</to></action></mousebind><mousebind button="A-Down" action="Click"><action name="GoToDesktop"><to>next</to></action></mousebind></context></mouse><menu><file>menu.xml</file><hideDelay>200</hideDelay><middle>no</middle><submenuShowDelay>100</submenuShowDelay><submenuHideDelay>400</submenuHideDelay><showIcons>yes</showIcons><manageDesktops>yes</manageDesktops></menu><applications></applications></openbox_config>
-      when: enable_graphical
+                <?xml version="1.0" encoding="UTF-8"?><openbox_menu xmlns="http://openbox.org/3.4/menu"><menu id="root-menu" label="Openbox 3"><item label="Terminal  [Win+T]"><action name="Execute"><command>xterm</command></action></item><item label="Web Browser  [Win+W]"><action name="Execute"><command>firefox</command></action></item><item label="File Manager  [Win+E]"><action name="Execute"><command>doublecmd</command></action></item><item label="Jellyfin  [Win+J]"><action name="Execute"><command>jellyfin-kiosk</command></action></item><item label="Task Manager  [Ctrl+Shift+Esc]"><action name="Execute"><command>qps</command></action></item><item label="Run...  [Win+Space]"><action name="Execute"><command>rofi</command></action></item><separator/><item label="Reconfigure Openbox"><action name="Reconfigure"/></item><item label="Restart Openbox"><action name="Restart"/></item><item label="Log Out"><action name="Exit"><prompt>yes</prompt></action></item></menu></openbox_menu>
+            - dest: "/home/{{ user_name }}/.config/rofi/config.rasi"
+              content: |
+                *{font:"monospace 10";background-color:#0c0d0e;text-color:#c8c8c8;border-color:#1793d1}window{width:480px;border:1px;padding:0;background-color:#0c0d0e}inputbar{background-color:#111315;border:0 0 1px 0;border-color:#1793d1;padding:6px 8px;children:[prompt,entry]}prompt{text-color:#1793d1;padding:0 6px 0 0}entry{text-color:#ffffff;background-color:transparent}listview{background-color:#0c0d0e;padding:4px 0;lines:8;spacing:0}element{padding:5px 10px;background-color:transparent;text-color:#c8c8c8}element selected{background-color:#1793d1;text-color:#ffffff}element-icon{size:1.2em;padding:0 6px 0 0}
 
-    # -----------------------------
-    # New Task: Console Autologin (Optional)
-    # -----------------------------
+    # autologin
     - name: Configure console autologin on tty1
+      when: enable_autologin
       block:
-        - name: Create systemd override directory for getty@tty1
+        - name: Ensure getty override directory
           file:
             path: /etc/systemd/system/getty@tty1.service.d
             state: directory
+            mode: "0755"
 
-        - name: Setup autologin override for getty@tty1
+        - name: Write autologin override
           copy:
             dest: /etc/systemd/system/getty@tty1.service.d/autologin.conf
             mode: "0644"
@@ -1014,66 +849,45 @@
               ExecStart=
               ExecStart=-/usr/bin/agetty --autologin {{ user_name }} --noclear %I $TERM
 
-        - name: Enable getty@tty1 service
+        - name: Enable getty@tty1
           systemd:
             name: getty@tty1
             enabled: true
+            daemon_reload: true
 
-        - name: Reload systemd daemon for autologin
-          command: systemctl daemon-reload
-          changed_when: false
-      when: enable_autologin
-
+    # services
     - name: Enable and start system services
       systemd:
         name: "{{ item }}"
         state: started
         enabled: true
-      loop: "{{ system_services }}"
+      loop: "{{ svc_core }}"
 
     - name: Flush handlers
       meta: flush_handlers
 
-    - name: Reboot system if needed
+    - name: Reboot after first-time install
       reboot:
-        reboot_timeout: 60
+        reboot_timeout: "{{ reboot_timeout }}"
       ignore_unreachable: true
       when: execute_system_installation | default(false) | bool
 
+  # · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·
   handlers:
     - name: regenerate grub config
       command: grub-mkconfig -o /boot/grub/grub.cfg
-      listen: "regenerate grub config"
 
-    - name: Update system CA certificates
+    - name: update ca trust
       command: update-ca-trust
 
     - name: restart cockpit
-      systemd:
-        name: cockpit.socket
-        state: restarted
-        daemon_reload: true
+      systemd: { name: cockpit.socket, state: restarted, daemon_reload: true }
 
     - name: restart nginx
-      systemd:
-        name: nginx
-        state: restarted
-        daemon_reload: true
+      systemd: { name: nginx, state: restarted, daemon_reload: true }
 
     - name: restart qbittorrent
-      systemd:
-        name: qbittorrent-nox
-        state: restarted
-        daemon_reload: true
+      systemd: { name: qbittorrent-nox, state: restarted, daemon_reload: true }
 
     - name: restart ufw
-      systemd:
-        name: ufw
-        state: restarted
-        daemon_reload: true
-
-    - name: reload system services
-      systemd:
-        name: "{{ item }}"
-        state: restarted
-      loop: "{{ system_services }}"
+      systemd: { name: ufw, state: restarted, daemon_reload: true }
